@@ -96,7 +96,7 @@ class BasicNavSimulator:
 
         # Vessel state
         self.position = {"lat": 0, "lon": 0}
-        self.sog = 90  # Speed over ground in knots
+        self.sog = 8  # Speed over ground in knots
         self.cog = 0  # Course Over Ground in degrees true
         self.heading = 0  # Heading in degrees true
         self.variation = -15.0  # Magnetic variation (East negative)
@@ -126,6 +126,14 @@ class BasicNavSimulator:
         self.port_rudder = 0.0  # For dual rudder vessels
         self.max_rudder_angle = 35.0  # Maximum rudder deflection
         self.has_dual_rudder = False  # Set True for vessels with dual rudders
+
+        # Add wind-related properties
+        self.true_wind_speed = 0.0  # Wind speed in knots
+        self.true_wind_direction = 0.0  # Direction wind is coming FROM in degrees true
+        self.apparent_wind_speed = 0.0  # Apparent wind speed in knots
+        self.apparent_wind_angle = (
+            0.0  # Apparent wind angle relative to bow (-180 to +180)
+        )
 
     def calculate_nmea_checksum(self, sentence: str) -> str:
         """
@@ -346,7 +354,7 @@ class BasicNavSimulator:
             desired_heading: Target heading in degrees
             delta_time: Time step in seconds
         """
-    
+
         # Calculate heading error (-180 to +180 degrees)
         error = (desired_heading - self.heading + 180) % 360 - 180
 
@@ -647,6 +655,95 @@ class BasicNavSimulator:
         )
         self.send_nmea(rmb)
 
+    def calculate_apparent_wind(self):
+        """
+        Calculate apparent wind based on true wind and vessel movement.
+        Uses vector mathematics to combine true wind and vessel motion.
+        """
+        # Convert angles to radians
+        true_wind_dir_rad = math.radians(self.true_wind_direction)
+        vessel_heading_rad = math.radians(self.heading)
+
+        # Convert true wind to vector components
+        true_wind_x = self.true_wind_speed * math.sin(true_wind_dir_rad)
+        true_wind_y = self.true_wind_speed * math.cos(true_wind_dir_rad)
+
+        # Convert vessel motion to vector components
+        vessel_x = self.sog * math.sin(vessel_heading_rad)
+        vessel_y = self.sog * math.cos(vessel_heading_rad)
+
+        # Calculate apparent wind components by subtracting vessel motion
+        apparent_x = true_wind_x - vessel_x
+        apparent_y = true_wind_y - vessel_y
+
+        # Calculate apparent wind speed
+        self.apparent_wind_speed = math.sqrt(apparent_x**2 + apparent_y**2)
+
+        # Calculate apparent wind angle relative to vessel heading
+        apparent_angle_rad = math.atan2(apparent_x, apparent_y) - vessel_heading_rad
+
+        # Convert to degrees and normalize to -180 to +180
+        self.apparent_wind_angle = math.degrees(apparent_angle_rad)
+        if self.apparent_wind_angle > 180:
+            self.apparent_wind_angle -= 360
+        elif self.apparent_wind_angle < -180:
+            self.apparent_wind_angle += 360
+
+    def send_mwv(self, is_true: bool):
+        """
+        Send MWV (Wind Speed and Angle) sentence.
+        Format: $--MWV,x.x,a,x.x,a,A*hh
+        Fields: wind angle, reference (R/T), wind speed, wind speed units, status
+        """
+        if is_true:
+            # For true wind, calculate angle relative to bow
+            relative_angle = (self.true_wind_direction - self.heading) % 360
+            if relative_angle > 180:
+                relative_angle -= 360
+            wind_speed = self.true_wind_speed
+            reference = "T"
+        else:
+            # For apparent wind, use calculated apparent values
+            relative_angle = self.apparent_wind_angle
+            wind_speed = self.apparent_wind_speed
+            reference = "R"
+
+        # Ensure angle is positive (0-360) for NMEA format
+        if relative_angle < 0:
+            relative_angle += 360
+
+        mwv = (
+            f"WIMWV,"
+            f"{relative_angle:.1f},"  # Wind angle
+            f"{reference},"  # Reference: R (Relative/Apparent) or T (True)
+            f"{wind_speed:.1f},"  # Wind speed
+            f"N,"  # Units: N for knots
+            f"A"  # Status: A for valid data
+        )
+        self.send_nmea(mwv)
+
+    def send_mwd(self):
+        """
+        Send MWD (Wind Direction and Speed) sentence.
+        Format: $--MWD,x.x,T,x.x,M,x.x,N,x.x,M*hh
+        Fields: wind direction true, T, wind direction magnetic, M,
+                wind speed knots, N, wind speed m/s, M
+        """
+        # Calculate magnetic wind direction
+        magnetic_wind_dir = (self.true_wind_direction + self.variation) % 360
+
+        # Convert wind speed to m/s
+        wind_speed_ms = self.true_wind_speed * 0.514444  # Convert knots to m/s
+
+        mwd = (
+            f"WIMWD,"
+            f"{self.true_wind_direction:.1f},T,"  # True wind direction
+            f"{magnetic_wind_dir:.1f},M,"  # Magnetic wind direction
+            f"{self.true_wind_speed:.1f},N,"  # Wind speed in knots
+            f"{wind_speed_ms:.1f},M"  # Wind speed in m/s
+        )
+        self.send_nmea(mwd)
+
     def send_essential_data(self):
         """Send RMC, HDT, HDG sentences"""
         now = datetime.now(UTC)
@@ -740,18 +837,26 @@ class BasicNavSimulator:
         # Calculate actual course from movement vector
         total_dx_per_second = total_dx / delta_time
         total_dy_per_second = total_dy / delta_time
-        
-        self.cog = math.degrees(math.atan2(total_dx_per_second, total_dy_per_second)) % 360
+
+        self.cog = (
+            math.degrees(math.atan2(total_dx_per_second, total_dy_per_second)) % 360
+        )
 
     def simulate(
         self,
         waypoints: List[Dict[str, Union[str, float]]],
         duration_seconds: Optional[float] = None,
         update_rate: float = 1,
+        wind_direction: float = 0.0,  # Direction wind is coming FROM in degrees true
+        wind_speed: float = 0.0,  # Wind speed in knots
     ):
         """Run the simulation with waypoints"""
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
+
+        # Initialize wind parameters
+        self.true_wind_speed = wind_speed
+        self.true_wind_direction = wind_direction
 
         parsed_waypoints = []
         for wp in waypoints:
@@ -802,6 +907,9 @@ class BasicNavSimulator:
                 # Update simulation state
                 self.update_position(delta_time)
 
+                # Calculate apparent wind based on true wind and vessel motion
+                self.calculate_apparent_wind()
+
                 # Send all instrument data
                 self.send_essential_data()
                 self.send_gga()  # GPS fix data
@@ -810,6 +918,11 @@ class BasicNavSimulator:
                 self.send_rmb()  # Recommended Minimum Navigation Information
                 self.send_vhw()  # Water speed and heading
                 self.send_rsa()  # Rudder angle
+
+                # Send wind data
+                self.send_mwv(True)  # True wind
+                self.send_mwv(False)  # Apparent wind
+                self.send_mwd()  # Wind direction and speed
 
                 last_update = current_time
                 time.sleep(update_rate)
@@ -834,5 +947,9 @@ if __name__ == "__main__":
 
     logging.info("Starting simulation...")
     simulator.simulate(
-        waypoints=waypoints, duration_seconds=None, update_rate=1  # Update every second
+        waypoints=waypoints,
+        duration_seconds=None,
+        update_rate=1,  # Update every second
+        wind_direction=270,  # Wind coming from the west
+        wind_speed=15.0,  # 15 knots of wind
     )
