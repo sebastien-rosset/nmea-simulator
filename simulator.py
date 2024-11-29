@@ -96,7 +96,7 @@ class BasicNavSimulator:
 
         # Vessel state
         self.position = {"lat": 0, "lon": 0}
-        self.sog = 7  # Speed over ground in knots
+        self.sog = 30  # Speed over ground in knots
         self.cog = 0  # Course Over Ground in degrees true
         self.heading = 0  # Heading in degrees true
         self.variation = -15.0  # Magnetic variation (East negative)
@@ -682,7 +682,17 @@ class BasicNavSimulator:
         # self.send_nmea(vtg)
 
     def update_position(self, delta_time):
-        """Update position based on SOG, COG, and rudder angle, accounting for current"""
+        """
+        Update position based on heading and speed, accounting for:
+        - Rudder angle effect on heading
+        - Water current
+        - Reduced effectiveness when heading differs from course
+        """
+
+        # Skip update if delta_time is too small
+        if delta_time < 0.001:  # Less than 1ms
+            return
+        
         # First update the rudder based on desired course
         self.update_rudder_angle(self.cog, delta_time)
 
@@ -698,12 +708,21 @@ class BasicNavSimulator:
         current_speed_ms = self.current_speed * 0.514444
 
         # Convert angles to radians
-        ship_course_rad = math.radians(self.cog)
+        heading_rad = math.radians(self.heading)
         current_dir_rad = math.radians(self.current_direction)
 
-        # Calculate ship movement vector
-        ship_dx = ship_speed_ms * math.sin(ship_course_rad)
-        ship_dy = ship_speed_ms * math.cos(ship_course_rad)
+        # Calculate efficiency factor based on difference between heading and course
+        # Maximum efficiency (1.0) when heading matches course
+        # Minimum efficiency (0.5) when heading is 90 degrees off course
+        heading_difference = abs((self.heading - self.cog + 180) % 360 - 180)
+        efficiency = 1.0 - (0.5 * min(heading_difference, 90) / 90)
+
+        # Apply efficiency to ship speed
+        effective_speed = ship_speed_ms * efficiency
+
+        # Calculate ship movement vector based on actual heading
+        ship_dx = effective_speed * math.sin(heading_rad)
+        ship_dy = effective_speed * math.cos(heading_rad)
 
         # Calculate current vector
         current_dx = current_speed_ms * math.sin(current_dir_rad)
@@ -722,8 +741,23 @@ class BasicNavSimulator:
         # Adjust longitude change based on latitude
         dlon = math.degrees(total_dx / (R * math.cos(lat_rad)))
 
+        # Update position
         self.position["lat"] += dlat
         self.position["lon"] += dlon
+
+         # Update COG and SOG based on actual movement
+        # Calculate actual course from movement vector
+        total_dx_per_second = total_dx / delta_time
+        total_dy_per_second = total_dy / delta_time
+        
+        # Update COG and SOG based on actual movement
+        # Calculate actual course from movement vector
+        self.cog = math.degrees(math.atan2(total_dx_per_second, total_dy_per_second)) % 360
+    
+        # Calculate actual speed from movement vector
+        actual_speed_ms = math.sqrt(total_dx_per_second * total_dx_per_second + 
+                                total_dy_per_second * total_dy_per_second)
+        self.sog = actual_speed_ms / 0.514444  # Convert back to knots
 
     def simulate(
         self,
