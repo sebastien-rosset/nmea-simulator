@@ -10,8 +10,8 @@ import re
 import time
 from typing import List, Dict, Optional, Tuple, Union
 
-logging.basicConfig(level=logging.INFO)
-
+# Set up logging with timestamp, level, and message
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 @dataclass
 class AISVessel:
@@ -34,11 +34,8 @@ class AISVessel:
 
 class AISEncoder:
     """Encode AIS messages"""
-
     # AIS 6-bit ASCII encoding table
-    __ais_chars = (
-        "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\^_`abcdefghijklmnopqrstuvw"
-    )
+    __ais_chars = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\^_`abcdefghijklmnopqrstuvw"
 
     @staticmethod
     def encode_string(text: str, length: int) -> str:
@@ -55,7 +52,6 @@ class AISEncoder:
             if char in AISEncoder.__ais_chars:
                 index = AISEncoder.__ais_chars.index(char)
                 result += f"{index:06b}"
-
         return result
 
     @staticmethod
@@ -81,12 +77,57 @@ class AISEncoder:
         # Convert each 6 bits to AIS character
         result = ""
         for i in range(0, len(binary), 6):
-            chunk = binary[i : i + 6]
+            chunk = binary[i:i + 6]
             value = int(chunk, 2)
             result += AISEncoder.__ais_chars[value]
 
         return result
 
+    @staticmethod
+    def encode_position_report(vessel: AISVessel) -> str:
+        """Encode AIS Position Report (Message Type 1)"""
+        binary = ""
+        binary += AISEncoder.encode_int(1, 6)  # Message Type
+        binary += AISEncoder.encode_int(0, 2)  # Repeat Indicator
+        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
+        binary += AISEncoder.encode_int(vessel.nav_status, 4)  # Navigation Status
+        binary += AISEncoder.encode_int(int(vessel.rot), 8)  # Rate of Turn
+        binary += AISEncoder.encode_float(vessel.sog, 10, 10)  # Speed Over Ground
+        binary += AISEncoder.encode_int(1, 1)  # Position Accuracy
+        binary += AISEncoder.encode_float(vessel.position['lon'], 28, 600000)  # Longitude
+        binary += AISEncoder.encode_float(vessel.position['lat'], 27, 600000)  # Latitude
+        binary += AISEncoder.encode_float(vessel.cog, 12, 10)  # Course Over Ground
+        binary += AISEncoder.encode_float(vessel.heading, 9, 1)  # True Heading
+        binary += AISEncoder.encode_int(int(datetime.now().second), 6)  # Timestamp
+        binary += AISEncoder.encode_int(0, 2)  # Maneuver Indicator
+        binary += AISEncoder.encode_int(0, 3)  # Spare
+        binary += "1"  # RAIM flag
+        binary += AISEncoder.encode_int(0, 19)  # Radio status
+
+        return AISEncoder.binary_to_payload(binary)
+
+    @staticmethod
+    def encode_static_data(vessel: AISVessel) -> str:
+        """Encode AIS Static and Voyage Related Data (Message Type 5)"""
+        binary = ""
+        binary += AISEncoder.encode_int(5, 6)  # Message Type
+        binary += AISEncoder.encode_int(0, 2)  # Repeat Indicator
+        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
+        binary += AISEncoder.encode_int(0, 2)  # AIS Version
+        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # IMO Number
+        binary += AISEncoder.encode_string(vessel.callsign, 42)  # Callsign
+        binary += AISEncoder.encode_string(vessel.name, 120)  # Vessel Name
+        binary += AISEncoder.encode_int(vessel.ship_type, 8)  # Ship Type
+        binary += AISEncoder.encode_int(vessel.length, 9)  # Length
+        binary += AISEncoder.encode_int(vessel.beam, 6)  # Beam
+        binary += AISEncoder.encode_float(vessel.draft, 8, 10)  # Draft
+        binary += AISEncoder.encode_int(0, 20)  # Destination
+        binary += AISEncoder.encode_int(0, 6)  # ETA month/day
+        binary += AISEncoder.encode_int(0, 4)  # ETA hour
+        binary += AISEncoder.encode_int(0, 6)  # ETA minute
+        binary += "0" * 6  # Padding
+
+        return AISEncoder.binary_to_payload(binary)
 
 class BasicNavSimulator:
     def __init__(self, udp_host="127.0.0.1", udp_port=10110):
@@ -134,6 +175,11 @@ class BasicNavSimulator:
         self.apparent_wind_angle = (
             0.0  # Apparent wind angle relative to bow (-180 to +180)
         )
+
+        # Add AIS vessels list
+        self.ais_vessels: List[AISVessel] = []
+        self.last_ais_update = 0
+        self.ais_update_interval = 10  # seconds between AIS updates
 
     def calculate_nmea_checksum(self, sentence: str) -> str:
         """
@@ -655,6 +701,64 @@ class BasicNavSimulator:
         )
         self.send_nmea(rmb)
 
+    def send_ais_message(self, body: str, message_type: int, channel: str = "A"):
+        """Send an AIS message in NMEA format"""
+        # Split message into 168-character fragments
+        max_len = 168
+        fragments = [body[i:i + max_len] for i in range(0, len(body), max_len)]
+        
+        for i, fragment in enumerate(fragments):
+            # Calculate fragment count and number
+            frag_count = len(fragments)
+            frag_num = i + 1
+            
+            # Build AIVDM sentence
+            sentence = f"!AIVDM,{frag_count},{frag_num},,{channel},{fragment},0"
+            
+            # Add checksum and send
+            self.send_nmea(sentence)
+
+    def update_ais_vessels(self, delta_time: float):
+        """Update AIS vessel positions and send messages"""
+        current_time = time.time()
+        
+        # Only update AIS data at specified interval
+        if current_time - self.last_ais_update < self.ais_update_interval:
+            return
+            
+        for vessel in self.ais_vessels:
+            # Update vessel position based on course and speed
+            if vessel.position:
+                # Convert speed to meters per second
+                speed_ms = vessel.sog * 0.514444
+                
+                # Calculate movement
+                heading_rad = math.radians(vessel.cog)
+                dx = speed_ms * math.sin(heading_rad) * delta_time
+                dy = speed_ms * math.cos(heading_rad) * delta_time
+                
+                # Convert to coordinate changes
+                R = 6371000  # Earth radius in meters
+                lat_rad = math.radians(vessel.position['lat'])
+                
+                dlat = math.degrees(dy / R)
+                dlon = math.degrees(dx / (R * math.cos(lat_rad)))
+                
+                # Update position
+                vessel.position['lat'] += dlat
+                vessel.position['lon'] += dlon
+                
+                # Send position report
+                pos_report = AISEncoder.encode_position_report(vessel)
+                self.send_ais_message(pos_report, 1)
+                
+                # Occasionally send static data
+                if random.random() < 0.1:  # 10% chance each update
+                    static_data = AISEncoder.encode_static_data(vessel)
+                    self.send_ais_message(static_data, 5)
+        
+        self.last_ais_update = current_time
+
     def calculate_apparent_wind(self):
         """
         Calculate apparent wind based on true wind and vessel movement.
@@ -849,10 +953,14 @@ class BasicNavSimulator:
         update_rate: float = 1,
         wind_direction: float = 0.0,  # Direction wind is coming FROM in degrees true
         wind_speed: float = 0.0,  # Wind speed in knots
+        ais_vessels: Optional[List[AISVessel]] = None,
     ):
         """Run the simulation with waypoints"""
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
+
+        # Initialize AIS vessels if provided
+        self.ais_vessels = ais_vessels or []
 
         # Initialize wind parameters
         self.true_wind_speed = wind_speed
@@ -890,6 +998,9 @@ class BasicNavSimulator:
                     break
 
                 delta_time = current_time - last_update
+
+                # Update AIS vessels
+                self.update_ais_vessels(delta_time)
 
                 # Update course to next waypoint
                 if not self.update_course_to_waypoint():
@@ -945,6 +1056,40 @@ if __name__ == "__main__":
         {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
     ]
 
+    # Create some example AIS vessels
+    ais_vessels = [
+        AISVessel(
+            mmsi=366123456,
+            name="GOLDEN GATE",
+            callsign="WD123",
+            ship_type=70,
+            length=200,
+            beam=30,
+            draft=12.0,
+            position={"lat": 37.4049, "lon": -122.2294},
+            sog=12.0,
+            cog=270.0,
+            heading=270.0,
+            nav_status=0,
+            rot=0.0
+        ),
+        AISVessel(
+            mmsi=366789012,
+            name="BAY TRADER",
+            callsign="WD456",
+            ship_type=80,
+            length=150,
+            beam=25,
+            draft=8.0,
+            position={"lat": 37.4085, "lon": -122.208},
+            sog=8.0,
+            cog=90.0,
+            heading=90.0,
+            nav_status=0,
+            rot=0.0
+        )
+    ]
+
     logging.info("Starting simulation...")
     simulator.simulate(
         waypoints=waypoints,
@@ -952,4 +1097,5 @@ if __name__ == "__main__":
         update_rate=1,  # Update every second
         wind_direction=270,  # Wind coming from the west
         wind_speed=15.0,  # 15 knots of wind
+        ais_vessels=ais_vessels,
     )
