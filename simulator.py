@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, UTC
 import logging
 import math
+import random
 import re
 import time
 from typing import List, Dict, Optional, Tuple, Union
@@ -95,7 +96,7 @@ class BasicNavSimulator:
 
         # Vessel state
         self.position = {"lat": 0, "lon": 0}
-        self.sog = 5  # Speed over ground in knots
+        self.sog = 7  # Speed over ground in knots
         self.cog = 0  # Course Over Ground in degrees true
         self.heading = 0  # Heading in degrees true
         self.variation = -15.0  # Magnetic variation (East negative)
@@ -125,6 +126,12 @@ class BasicNavSimulator:
         self.port_rudder = 0.0  # For dual rudder vessels
         self.max_rudder_angle = 35.0  # Maximum rudder deflection
         self.has_dual_rudder = False  # Set True for vessels with dual rudders
+
+        # Random helm parameters
+        self.random_helm_duration = 0  # Duration of random helm inputs
+        self.random_helm_start = 0     # Start time of random helm inputs
+        self.helm_error = 0            # Current helm error in degrees
+        self.max_helm_error = 20       # Maximum random helm error in degrees
 
     def calculate_nmea_checksum(self, sentence: str) -> str:
         """
@@ -336,6 +343,24 @@ class BasicNavSimulator:
         # Calculate water speed
         self.water_speed = math.sqrt(wx * wx + wy * wy)
 
+    def update_random_helm(self):
+        """Update random helm error if within random helm duration"""
+        current_time = time.time()
+        
+        if self.random_helm_duration > 0:
+            # If we're within the random helm period
+            if current_time - self.random_helm_start < self.random_helm_duration:
+                # Gradually change helm error
+                # Add small random changes to simulate human input
+                self.helm_error += random.uniform(-0.5, 0.5)
+                # Keep within bounds
+                self.helm_error = max(-self.max_helm_error, 
+                                    min(self.max_helm_error, self.helm_error))
+            else:
+                # Reset after duration expires
+                self.random_helm_duration = 0
+                self.helm_error = 0
+
     def update_rudder_angle(self, desired_heading: float, delta_time: float):
         """
         Update rudder angle based on desired vs current heading.
@@ -345,6 +370,11 @@ class BasicNavSimulator:
             desired_heading: Target heading in degrees
             delta_time: Time step in seconds
         """
+        # Add helm error to desired heading
+        if self.random_helm_duration > 0:
+            self.update_random_helm()
+            desired_heading += self.helm_error
+    
         # Calculate heading error (-180 to +180 degrees)
         error = (desired_heading - self.heading + 180) % 360 - 180
 
@@ -732,6 +762,10 @@ class BasicNavSimulator:
         """Run the simulation with waypoints"""
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
+        
+         # Set up random helm period
+        self.random_helm_duration = update_rate * 10  # Duration of random helm inputs
+        self.random_helm_start = time.time()  # Start time for random helm
 
         parsed_waypoints = []
         for wp in waypoints:
@@ -810,10 +844,6 @@ if __name__ == "__main__":
         {"lat": "37° 43.4444' N", "lon": "122° 20.7058' W"},
         {"lat": "37° 48.0941' N", "lon": "122° 22.7372' W"},
         {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
-        # {"lat": 37.8199, "lon": -122.4783},  # Start near Golden Gate Bridge
-        # {"lat": 37.8300, "lon": -122.4650},  # Mid-bay point
-        # {"lat": 37.8400, "lon": -122.4500},  # Another mid-bay point
-        # {"lat": 37.8500, "lon": -122.4400}   # End point
     ]
 
     logging.info("Starting simulation...")
