@@ -1260,16 +1260,6 @@ if __name__ == "__main__":
         {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
     ]
 
-    # AIS Navigation status:
-    # 0=Under way using engine
-    # 1=At anchor
-    # 2=Not under command
-    # 3=Restricted maneuverability
-    # 4=Constrained by her draught
-    # 5=Moored
-    # 6=Aground
-    # 7=Engaged in fishing
-    # 8=Under way sailing
     # Create some example AIS vessels
     ais_vessels = [
         AISVessel(
@@ -1342,7 +1332,7 @@ if __name__ == "__main__":
             mmsi=366123464,
             vessel_name="WIND WALKER",
             ship_type=AISVessel.SHIP_TYPES['SAILING'],
-            position={"lat": "37° 41.1575' N", "lon": "122° 22.9460' W"},
+            position={"lat": "37° 40.3775' N", "lon": "122° 22.1460' W"},
             navigation_status=AISVessel.NAV_STATUS['UNDERWAY_SAILING'],
             speed=6.0
         )
