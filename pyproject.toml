@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "nmea-simulator"
+version = "0.1.0"
+description = ""
+authors = ["Sebastien Rosset"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.13"
+bitstring = "^4.2.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

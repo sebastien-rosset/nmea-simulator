@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import bitstring
 from socket import socket, AF_INET, SOCK_DGRAM
 from dataclasses import dataclass, field
 from datetime import datetime, UTC
@@ -11,7 +12,7 @@ import time
 from typing import List, Dict, Optional, Tuple, Union
 
 # Set up logging with timestamp, level, and message
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 def parse_coordinate(coord: Union[str, float, int]) -> float:
     """
@@ -57,26 +58,37 @@ def parse_coordinate(coord: Union[str, float, int]) -> float:
 
     except (ValueError, AttributeError) as e:
         raise ValueError(f"Unable to parse coordinate: {coord}") from e
-@dataclass
+
+
 class AISVessel:
-    """Class to hold AIS vessel data"""
-
-    mmsi: int
-    name: str = ""
-    callsign: str = ""
-    ship_type: int = 70  # Default: Cargo
-    length: int = 100  # meters
-    beam: int = 20  # meters
-    draft: float = 5.0  # meters
-    position: Dict[str, Union[str, float, int]] = field(default_factory=lambda: {"lat": 0, "lon": 0})
-    sog: float = 0.0  # Speed over ground in knots
-    cog: float = 0.0  # Course over ground in degrees
-    heading: float = 0.0  # True heading in degrees
-    nav_status: int = 0  # 0=Under way using engine
-    rot: float = 0.0  # Rate of turn in deg/min
-
-    def __post_init__(self):
-        """Parse position coordinates after initialization if they're strings"""
+    def __init__(self, mmsi, vessel_name, call_sign, ship_type, 
+                 length, beam, draft, position, course, speed, navigation_status, rot=0):
+        """
+        Initialize an AIS vessel with basic parameters
+        
+        Args:
+            mmsi (int): Maritime Mobile Service Identity (9 digits)
+            vessel_name (str): Name of the vessel (max 20 chars)
+            call_sign (str): Radio call sign (max 7 chars)
+            ship_type (int): Type of ship according to AIS specifications
+            length (float): Length of vessel in meters
+            beam (float): Beam/width of vessel in meters
+            position (tuple): (latitude, longitude) in decimal degrees
+            course (float): Course over ground in degrees
+            speed (float): Speed over ground in knots
+        """
+        self.mmsi = mmsi
+        self.vessel_name = vessel_name[:20]
+        self.call_sign = call_sign[:7]
+        self.ship_type = ship_type
+        self.length = length
+        self.beam = beam
+        self.draft = min(draft, 25.5)
+        self.position = position
+        self.course = course
+        self.speed = speed
+        self.rot = rot
+        self.navigation_status = navigation_status
         if self.position:
             parsed_position = {}
             for key in ['lat', 'lon']:
@@ -84,130 +96,183 @@ class AISVessel:
                     parsed_position[key] = parse_coordinate(self.position[key])
             self.position = parsed_position
 
-class AISEncoder:
-    """Encode AIS messages"""
-    # AIS 6-bit ASCII encoding table
-    __ais_chars = "0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ\\^_`abcdefghijklmnopqrstuvw"
+    def encode_rate_of_turn(self):
+        """
+        Encode rate of turn according to AIS specifications
+        ROT = 4.733 * SQRT(rate of turn) degrees per min
+        Returns encoded ROT value (-128 to +127)
+        """
+        if self.rot == 0:
+            return 0
+        elif self.rot is None:
+            return -128  # Not available
+        
+        # Convert ROT to AIS ROT indicator
+        ais_rot = 4.733 * math.sqrt(abs(self.rot))
+        ais_rot = round(ais_rot)
+        
+        # Cap at 126 (708° per minute), negative values indicate port turn
+        ais_rot = min(126, ais_rot)
+        if self.rot < 0:
+            ais_rot = -ais_rot
+            
+        return ais_rot
 
-    @staticmethod
-    def encode_string(text: str, length: int) -> str:
-        """Encode a string to 6-bit ASCII padded to specified length"""
-        if not text:
-            return "0" * length
+    def encode_position_report(self):
+        """
+        Encode a Position Report (Message Type 1) in AIVDM format
+        Returns the payload part of the AIVDM sentence
+        """
+        # Create a BitArray to hold the message
+        bits = bitstring.BitArray()
+        
+        # Message Type (6 bits) - Position Report is type 1
+        bits.append(bitstring.pack('uint:6', 1))
+        
+        # Repeat Indicator (2 bits)
+        bits.append(bitstring.pack('uint:2', 0))
+        
+        # MMSI (30 bits)
+        bits.append(bitstring.pack('uint:30', self.mmsi))
+        
+        # Navigation Status (4 bits)
+        bits.append(bitstring.pack('uint:4', self.navigation_status))
+        
+        # Rate of Turn (8 bits)
+        bits.append(bitstring.pack('int:8', self.encode_rate_of_turn()))
+        
+        # Speed Over Ground (10 bits) - in 0.1 knot steps
+        speed_int = int(self.speed * 10)
+        bits.append(bitstring.pack('uint:10', min(speed_int, 1023)))
+        
+        # Position Accuracy (1 bit) - 0 = low, 1 = high
+        bits.append(bitstring.pack('uint:1', 0))
+        
+        # Longitude (28 bits) - in 1/10000 minute
+        lon = int(self.position['lon'] * 600000)
+        bits.append(bitstring.pack('int:28', lon))
+        
+        # Latitude (27 bits) - in 1/10000 minute
+        lat = int(self.position['lat'] * 600000)
+        bits.append(bitstring.pack('int:27', lat))
+        
+        # Course Over Ground (12 bits) - in 0.1 degree steps
+        cog = int(self.course * 10)
+        bits.append(bitstring.pack('uint:12', cog))
+        
+        # True Heading (9 bits) - use COG if not available
+        bits.append(bitstring.pack('uint:9', int(self.course)))
+        
+        # Time Stamp (6 bits) - seconds of UTC timestamp
+        timestamp = datetime.utcnow().second
+        bits.append(bitstring.pack('uint:6', timestamp))
+        
+        # Reserved (4 bits)
+        bits.append(bitstring.pack('uint:4', 0))
+        
+        # Return the binary data encoded in 6-bit ASCII format
+        return self._encode_payload(bits)
+    
+    def encode_static_data(self):
+        """
+        Encode Static and Voyage Related Data (Message Type 5)
+        """
+        bits = bitstring.BitArray()
+        
+        # Message Type (6 bits) - Type 5
+        bits.append(bitstring.pack('uint:6', 5))
+        
+        # Repeat Indicator (2 bits)
+        bits.append(bitstring.pack('uint:2', 0))
+        
+        # MMSI (30 bits)
+        bits.append(bitstring.pack('uint:30', self.mmsi))
+        
+        # AIS Version (2 bits)
+        bits.append(bitstring.pack('uint:2', 0))
+        
+        # IMO Number (30 bits) - Using 0 for this example
+        bits.append(bitstring.pack('uint:30', 0))
+        
+        # Call Sign (42 bits) - 7 six-bit characters
+        call_sign_padded = self.call_sign.ljust(7)
+        for char in call_sign_padded:
+            bits.append(bitstring.pack('uint:6', ord(char) - 48 if ord(char) < 88 else ord(char) - 56))
+        
+        # Vessel Name (120 bits) - 20 six-bit characters
+        name_padded = self.vessel_name.ljust(20)
+        for char in name_padded:
+            bits.append(bitstring.pack('uint:6', ord(char) - 48 if ord(char) < 88 else ord(char) - 56))
+        
+        # Ship Type (8 bits)
+        bits.append(bitstring.pack('uint:8', self.ship_type))
+        
+        # Dimension to Bow (9 bits)
+        bits.append(bitstring.pack('uint:9', int(self.length/2)))
+        
+        # Dimension to Stern (9 bits)
+        bits.append(bitstring.pack('uint:9', int(self.length/2)))
+        
+        # Dimension to Port (6 bits)
+        bits.append(bitstring.pack('uint:6', int(self.beam/2)))
+        
+        # Dimension to Starboard (6 bits)
+        bits.append(bitstring.pack('uint:6', int(self.beam/2)))
+        
+        # Draft (8 bits) - in 0.1 meter steps
+        draft_dm = int(self.draft * 10)
+        bits.append(bitstring.pack('uint:8', draft_dm))
+        
+        # Rest of the message fields (destination, ETA, etc.) set to 0
+        bits.append(bitstring.pack('uint:54', 0))
+        
+        return self._encode_payload(bits)
 
-        # Convert to uppercase and pad/truncate to length
-        text = text.upper()[:length].ljust(length, "@")
-
-        # Convert each character to 6-bit
-        result = ""
-        for char in text:
-            if char in AISEncoder.__ais_chars:
-                index = AISEncoder.__ais_chars.index(char)
-                result += f"{index:06b}"
-        return result
-
-    @staticmethod
-    def encode_int(value: int, bits: int) -> str:
-        """Encode an integer using specified number of bits"""
-        if value < 0:
-            # Handle negative numbers using two's complement
-            value = (1 << bits) + value
-        return f"{value & ((1 << bits) - 1):0{bits}b}"
-
-    @staticmethod
-    def encode_float(value: float, bits: int, scale: float) -> str:
-        """Encode a floating point value using specified bits and scale"""
-        return AISEncoder.encode_int(int(round(value * scale)), bits)
-
-    @staticmethod
-    def binary_to_payload(binary: str) -> str:
-        """Convert binary string to AIS ASCII payload"""
+    def _encode_payload(self, bits):
+        """
+        Convert binary message to 6-bit ASCII payload
+        """
         # Pad to multiple of 6 bits
-        padding = (6 - (len(binary) % 6)) % 6
-        binary += "0" * padding
+        while len(bits) % 6:
+            bits.append('0b0')
+            
+        # Convert 6-bit groups to ASCII characters
+        payload = ''
+        for i in range(0, len(bits), 6):
+            sixbits = bits[i:i+6].uint
+            if sixbits < 40:
+                payload += chr(sixbits + 48)
+            else:
+                payload += chr(sixbits + 56)
+                
+        return payload
+    
+    def generate_position_report(self):
+        """
+        Generate complete NMEA AIVDM sentence
+        """
+        payload = self.encode_position_report()            
+        # AIVDM,1,1,,A,payload,0
+        checksum = self._calculate_checksum(f"AIVDM,1,1,,A,{payload},0")
+        return f"!AIVDM,1,1,,A,{payload},0*{checksum}"
+    
+    def generate_static_data(self):
+        """
+        Generate complete NMEA AIVDM sentence
+        """
+        payload = self.encode_static_data()
+        # AIVDM,1,1,,A,payload,0
+        checksum = self._calculate_checksum(f"AIVDM,1,1,,A,{payload},0")
+        return f"!AIVDM,1,1,,A,{payload},0*{checksum}"
 
-        # Convert each 6 bits to AIS character
-        result = ""
-        for i in range(0, len(binary), 6):
-            chunk = binary[i:i + 6]
-            value = int(chunk, 2)
-            result += AISEncoder.__ais_chars[value]
-
-        return result
-
-    @staticmethod
-    def encode_position_report(vessel: AISVessel) -> str:
-        """Encode AIS Position Report (Message Type 1)"""
-        # Calculate ROT
-        rot = min(max(int(vessel.rot * 4.733), -127), 127) if vessel.rot != 0 else 128
-
-        binary = ""
-        binary += AISEncoder.encode_int(1, 6)  # Message Type
-        binary += AISEncoder.encode_int(0, 2)  # Repeat Indicator
-        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
-        binary += AISEncoder.encode_int(vessel.nav_status, 4)  # Navigation Status
-        binary += AISEncoder.encode_int(rot, 8)  # Rate of Turn (encoded)
-        binary += AISEncoder.encode_float(vessel.sog, 10, 10)  # Speed Over Ground
-        binary += AISEncoder.encode_int(1, 1)  # Position Accuracy (high=1)
-        
-        # Convert coordinates to AIS format (minutes * 10000)
-        lon = int(vessel.position['lon'] * 600000)
-        lat = int(vessel.position['lat'] * 600000)
-        binary += AISEncoder.encode_int(lon, 28)  # Longitude
-        binary += AISEncoder.encode_int(lat, 27)  # Latitude
-        
-        binary += AISEncoder.encode_float(vessel.cog, 12, 10)  # Course Over Ground
-        binary += AISEncoder.encode_int(int(vessel.heading), 9)  # True Heading
-        binary += AISEncoder.encode_int(int(datetime.now().second), 6)  # Timestamp
-        binary += AISEncoder.encode_int(0, 2)  # Maneuver Indicator
-        binary += AISEncoder.encode_int(0, 3)  # Spare
-        binary += "1"  # RAIM flag
-        binary += AISEncoder.encode_int(0, 19)  # Radio status
-
-        logging.debug(f"Position report binary: {binary}")
-        logging.debug(f"Binary length: {len(binary)} bits")
-        
-        return AISEncoder.binary_to_payload(binary)
-
-    @staticmethod
-    def binary_to_payload(binary: str) -> str:
-        """Convert binary string to AIS ASCII payload"""
-        # Pad to multiple of 6 bits
-        padding = (6 - (len(binary) % 6)) % 6
-        binary += "0" * padding
-
-        # Convert each 6 bits to AIS character
-        result = ""
-        for i in range(0, len(binary), 6):
-            chunk = binary[i:i + 6]
-            value = int(chunk, 2)
-            result += AISEncoder.__ais_chars[value]
-
-        return result
-
-    @staticmethod
-    def encode_static_data(vessel: AISVessel) -> str:
-        """Encode AIS Static and Voyage Related Data (Message Type 5)"""
-        binary = ""
-        binary += AISEncoder.encode_int(5, 6)  # Message Type
-        binary += AISEncoder.encode_int(0, 2)  # Repeat Indicator
-        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
-        binary += AISEncoder.encode_int(0, 2)  # AIS Version
-        binary += AISEncoder.encode_int(vessel.mmsi, 30)  # IMO Number
-        binary += AISEncoder.encode_string(vessel.callsign, 42)  # Callsign (7 chars)
-        binary += AISEncoder.encode_string(vessel.name, 120)  # Vessel Name (20 chars)
-        binary += AISEncoder.encode_int(vessel.ship_type, 8)  # Ship Type
-        binary += AISEncoder.encode_int(vessel.length, 9)  # Length
-        binary += AISEncoder.encode_int(vessel.beam, 6)  # Beam
-        binary += AISEncoder.encode_int(int(vessel.draft * 10), 8)  # Draft (in decimeters)
-        binary += AISEncoder.encode_string("", 120)  # Destination (20 chars)
-        binary += AISEncoder.encode_int(0, 6)  # ETA month
-        binary += AISEncoder.encode_int(0, 5)  # ETA day
-        binary += AISEncoder.encode_int(0, 5)  # ETA hour
-        binary += AISEncoder.encode_int(0, 6)  # ETA minute
-        binary += AISEncoder.encode_int(0, 1)  # Electronic position fixing device type
-
-        return AISEncoder.binary_to_payload(binary)
+    def _calculate_checksum(self, data):
+        """
+        Calculate the NMEA checksum
+        """
+        checksum = 0
+        for char in data:
+            checksum ^= ord(char)
+        return format(checksum, '02X')
 
 class BasicNavSimulator:
     def __init__(self, udp_host="127.0.0.1", udp_port=10110):
@@ -775,32 +840,6 @@ class BasicNavSimulator:
         )
         self.send_nmea(rmb)
 
-    def send_ais_message(self, body: str, message_type: int, channel: str = "A"):
-        """Send an AIS message in NMEA format"""
-        # Split message into 168-character fragments
-        max_len = 168
-        fragments = [body[i:i + max_len] for i in range(0, len(body), max_len)]
-        
-        for i, fragment in enumerate(fragments):
-            # Calculate fill bits needed for proper 6-bit boundary
-            fill_bits = 0
-            if len(fragment) % 6 != 0:
-                fill_bits = 6 - (len(fragment) % 6)
-                
-            # Build AIVDM sentence without the trailing number
-            sentence = f"!AIVDM,{len(fragments)},{i+1},,{channel},{fragment},{fill_bits}"
-            
-            # Calculate checksum starting after "!"
-            checksum = 0
-            for char in sentence[1:]:
-                checksum ^= ord(char)
-                
-            # Send the message with proper line ending
-            full_sentence = f"{sentence}*{checksum:02X}\r\n"
-            logging.debug(f"Sending AIS message: {full_sentence.strip()}")
-            self.sock.sendto(full_sentence.encode(), (self.udp_host, self.udp_port))
-
-
     def update_ais_vessels(self, delta_time: float):
         """Update AIS vessel positions and send messages"""
         current_time = time.time()
@@ -813,10 +852,10 @@ class BasicNavSimulator:
             # Update vessel position based on course and speed
             if vessel.position:
                 # Convert speed to meters per second
-                speed_ms = vessel.sog * 0.514444
+                speed_ms = vessel.speed * 0.514444
                 
                 # Calculate movement
-                heading_rad = math.radians(vessel.cog)
+                heading_rad = math.radians(vessel.course)
                 dx = speed_ms * math.sin(heading_rad) * delta_time
                 dy = speed_ms * math.cos(heading_rad) * delta_time
                 
@@ -832,13 +871,12 @@ class BasicNavSimulator:
                 vessel.position['lon'] += dlon
                 
                 # Send position report
-                pos_report = AISEncoder.encode_position_report(vessel)
-                self.send_ais_message(pos_report, 1)
-                
-                # Occasionally send static data
-                if random.random() < 0.1:  # 10% chance each update
-                    static_data = AISEncoder.encode_static_data(vessel)
-                    self.send_ais_message(static_data, 5)
+                pos_report = vessel.generate_position_report()
+                self.sock.sendto(pos_report.encode(), (self.udp_host, self.udp_port))
+
+                # Send static data
+                static_data = vessel.generate_static_data()
+                self.sock.sendto(static_data.encode(), (self.udp_host, self.udp_port))
         
         self.last_ais_update = current_time
 
@@ -1144,32 +1182,30 @@ if __name__ == "__main__":
     ais_vessels = [
         AISVessel(
             mmsi=366123456,
-            name="BAY TRADER",
-            callsign="WD123",
+            vessel_name="BAY TRADER",
+            call_sign="WD123",
             ship_type=70,
             length=200,
             beam=30,
             draft=12.0,
             position={"lat": "37° 40.3575' N", "lon": "122° 22.1458' W"},
-            sog=12.0,
-            cog=270.0,
-            heading=270.0,
-            nav_status=0, # Under way using engine
-            rot=0.0
+            course=270.0,
+            speed=12.0,
+            navigation_status=0, # Under way using engine
+            rot=2.0
         ),
         AISVessel(
             mmsi=366789012,
-            name="WINDWALKER",
-            callsign="WD456",
+            vessel_name="WINDWALKER",
+            call_sign="WD456",
             ship_type=36,  # Sailing vessel
             length=15,  # 15 meter sailboat
             beam=4,     # 4 meter beam
             draft=2.1,  # 2.1 meter draft
             position={"lat": "37° 40.3573' N", "lon": "122° 22.1458' W"},
-            sog=6.0,    # 6 knots
-            cog=90.0,
-            heading=90.0,
-            nav_status=8,  # Under way sailing
+            course=90.0,
+            speed=6.0,    # 6 knots
+            navigation_status=8,  # Under way sailing
             rot=0.0
         ),
     ]
