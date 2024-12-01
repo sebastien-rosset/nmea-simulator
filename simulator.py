@@ -164,7 +164,7 @@ class AISVessel:
         bits.append(bitstring.pack('uint:9', int(self.course)))
         
         # Time Stamp (6 bits) - seconds of UTC timestamp
-        timestamp = datetime.utcnow().second
+        timestamp = datetime.now(UTC).second
         bits.append(bitstring.pack('uint:6', timestamp))
         
         # Reserved (4 bits)
@@ -176,6 +176,7 @@ class AISVessel:
     def encode_static_data(self):
         """
         Encode Static and Voyage Related Data (Message Type 5)
+        Uses 6-bit ASCII encoding as per ITU-R M.1371
         """
         bits = bitstring.BitArray()
         
@@ -197,12 +198,26 @@ class AISVessel:
         # Call Sign (42 bits) - 7 six-bit characters
         call_sign_padded = self.call_sign.ljust(7)
         for char in call_sign_padded:
-            bits.append(bitstring.pack('uint:6', ord(char) - 48 if ord(char) < 88 else ord(char) - 56))
+            # Convert to 6-bit ASCII as per ITU-R M.1371
+            if ord(char) >= 64:  # '@' and above
+                sixbit = ord(char) - 64
+            elif ord(char) >= 32:  # Space and above
+                sixbit = ord(char)
+            else:  # Below space
+                sixbit = 32  # Default to space
+            bits.append(bitstring.pack('uint:6', sixbit))
         
         # Vessel Name (120 bits) - 20 six-bit characters
         name_padded = self.vessel_name.ljust(20)
         for char in name_padded:
-            bits.append(bitstring.pack('uint:6', ord(char) - 48 if ord(char) < 88 else ord(char) - 56))
+            # Convert to 6-bit ASCII
+            if ord(char) >= 64:  # '@' and above
+                sixbit = ord(char) - 64
+            elif ord(char) >= 32:  # Space and above
+                sixbit = ord(char)
+            else:  # Below space
+                sixbit = 32  # Default to space
+            bits.append(bitstring.pack('uint:6', sixbit))
         
         # Ship Type (8 bits)
         bits.append(bitstring.pack('uint:8', self.ship_type))
@@ -223,8 +238,16 @@ class AISVessel:
         draft_dm = int(self.draft * 10)
         bits.append(bitstring.pack('uint:8', draft_dm))
         
-        # Rest of the message fields (destination, ETA, etc.) set to 0
-        bits.append(bitstring.pack('uint:54', 0))
+        # Destination (120 bits) - 20 six-bit characters
+        destination = "".ljust(20)
+        for char in destination:
+            bits.append(bitstring.pack('uint:6', 32))  # Space
+        
+        # DTE (1 bit)
+        bits.append(bitstring.pack('uint:1', 0))
+        
+        # Spare (1 bit)
+        bits.append(bitstring.pack('uint:1', 0))
         
         return self._encode_payload(bits)
 
@@ -872,10 +895,12 @@ class BasicNavSimulator:
                 
                 # Send position report
                 pos_report = vessel.generate_position_report()
+                logging.info(f"Sending NMEA: {pos_report.strip()}")
                 self.sock.sendto(pos_report.encode(), (self.udp_host, self.udp_port))
 
                 # Send static data
                 static_data = vessel.generate_static_data()
+                logging.info(f"Sending NMEA: {static_data.strip()}")
                 self.sock.sendto(static_data.encode(), (self.udp_host, self.udp_port))
         
         self.last_ais_update = current_time
