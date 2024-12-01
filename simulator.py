@@ -61,40 +61,97 @@ def parse_coordinate(coord: Union[str, float, int]) -> float:
 
 
 class AISVessel:
-    def __init__(self, mmsi, vessel_name, call_sign, ship_type, 
-                 length, beam, draft, position, course, speed, navigation_status, rot=0):
+    """AIS Vessel class"""
+
+    # AIS Navigation Status codes
+    NAV_STATUS = {
+        'UNDERWAY_ENGINE': 0,    # Under way using engine
+        'AT_ANCHOR': 1,          # At anchor
+        'NOT_UNDER_COMMAND': 2,  # Not under command
+        'RESTRICTED_MANEUVER': 3,# Restricted maneuverability
+        'CONSTRAINED_DRAFT': 4,  # Constrained by draught
+        'MOORED': 5,            # Moored
+        'AGROUND': 6,           # Aground
+        'FISHING': 7,           # Engaged in fishing
+        'UNDERWAY_SAILING': 8,  # Under way sailing
+    }
+    # Ship Types (common ones)
+    SHIP_TYPES = {
+        'CARGO': 70,      # Cargo ship
+        'TANKER': 80,     # Tanker
+        'FISHING': 30,    # Fishing vessel
+        'SAILING': 36,    # Sailing vessel
+        'PILOT': 50,      # Pilot vessel
+        'TUG': 52,        # Tug
+        'PASSENGER': 60,  # Passenger ship
+        'FERRY': 61,      # Ferry
+        'DREDGER': 33,    # Dredger
+    }
+    def __init__(self,
+                 mmsi: int,
+                 vessel_name: str,
+                 position: dict,
+                 ship_type: int = None,
+                 call_sign: str = None,
+                 length: float = None,
+                 beam: float = None,
+                 draft: float = None,
+                 course: float = 0.0,
+                 speed: float = 0.0,
+                 navigation_status: int = 0,
+                 rot: float = 0.0):
         """
         Initialize an AIS vessel with basic parameters
         
         Args:
             mmsi (int): Maritime Mobile Service Identity (9 digits)
             vessel_name (str): Name of the vessel (max 20 chars)
-            call_sign (str): Radio call sign (max 7 chars)
-            ship_type (int): Type of ship according to AIS specifications
-            length (float): Length of vessel in meters
-            beam (float): Beam/width of vessel in meters
-            position (tuple): (latitude, longitude) in decimal degrees
-            course (float): Course over ground in degrees
-            speed (float): Speed over ground in knots
+            position (dict): Position with 'lat' and 'lon' keys
+            ship_type (int, optional): Type of ship according to AIS specifications
+            call_sign (str, optional): Radio call sign (max 7 chars)
+            length (float, optional): Length of vessel in meters
+            beam (float, optional): Beam/width of vessel in meters
+            draft (float, optional): Draft in meters (max 25.5)
+            course (float, optional): Course over ground in degrees
+            speed (float, optional): Speed over ground in knots
+            navigation_status (int, optional): AIS navigation status code
+            rot (float, optional): Rate of turn in degrees per minute
         """
+        # Required parameters
+        if not isinstance(mmsi, int) or len(str(mmsi)) != 9:
+            raise ValueError("MMSI must be a 9-digit integer")
         self.mmsi = mmsi
         self.vessel_name = vessel_name[:20]
-        self.call_sign = call_sign[:7]
-        self.ship_type = ship_type
-        self.length = length
-        self.beam = beam
-        self.draft = min(draft, 25.5)
-        self.position = position
+        
+        # Optional parameters with defaults based on ship type
+        self.ship_type = ship_type or self.SHIP_TYPES['CARGO']  # Default to cargo ship
+        
+        # Set reasonable defaults based on ship type
+        if self.ship_type == self.SHIP_TYPES['SAILING']:
+            self.length = length or 15.0  # Default 15m sailing vessel
+            self.beam = beam or 4.0       # Default 4m beam
+            self.draft = min(draft or 2.1, 25.5)  # Default 2.1m draft
+        elif self.ship_type == self.SHIP_TYPES['FISHING']:
+            self.length = length or 25.0  # Default 25m fishing vessel
+            self.beam = beam or 8.0       # Default 8m beam
+            self.draft = min(draft or 3.5, 25.5)  # Default 3.5m draft
+        else:  # Cargo or other large vessels
+            self.length = length or 200.0  # Default 200m vessel
+            self.beam = beam or 30.0       # Default 30m beam
+            self.draft = min(draft or 12.0, 25.5)  # Default 12m draft
+            
+        self.call_sign = (call_sign or f"V{self.mmsi % 1000000:06d}")[:7]
         self.course = course
         self.speed = speed
         self.rot = rot
         self.navigation_status = navigation_status
-        if self.position:
-            parsed_position = {}
+        
+        # Parse position
+        self.position = {}
+        if position:
             for key in ['lat', 'lon']:
-                if key in self.position:
-                    parsed_position[key] = parse_coordinate(self.position[key])
-            self.position = parsed_position
+                if key in position:
+                    self.position[key] = parse_coordinate(position[key])
 
     def encode_rate_of_turn(self):
         """
@@ -1203,36 +1260,92 @@ if __name__ == "__main__":
         {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
     ]
 
+    # AIS Navigation status:
+    # 0=Under way using engine
+    # 1=At anchor
+    # 2=Not under command
+    # 3=Restricted maneuverability
+    # 4=Constrained by her draught
+    # 5=Moored
+    # 6=Aground
+    # 7=Engaged in fishing
+    # 8=Under way sailing
     # Create some example AIS vessels
     ais_vessels = [
         AISVessel(
             mmsi=366123456,
             vessel_name="BAY TRADER",
-            call_sign="WD123",
-            ship_type=70,
-            length=200,
-            beam=30,
-            draft=12.0,
-            position={"lat": "37° 40.3575' N", "lon": "122° 22.1458' W"},
-            course=270.0,
+            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            position={"lat": "37° 40.3575' N", "lon": "122° 22.1460' W"},
+            navigation_status=AISVessel.NAV_STATUS['UNDERWAY_ENGINE'],
             speed=12.0,
-            navigation_status=0, # Under way using engine
-            rot=2.0
+            course=270.0
         ),
         AISVessel(
-            mmsi=366789012,
-            vessel_name="WINDWALKER",
-            call_sign="WD456",
-            ship_type=36,  # Sailing vessel
-            length=15,  # 15 meter sailboat
-            beam=4,     # 4 meter beam
-            draft=2.1,  # 2.1 meter draft
-            position={"lat": "37° 40.3573' N", "lon": "122° 22.1458' W"},
-            course=90.0,
-            speed=6.0,    # 6 knots
-            navigation_status=8,  # Under way sailing
-            rot=0.0
+            mmsi=366123457,
+            vessel_name="ANCHOR QUEEN",
+            ship_type=AISVessel.SHIP_TYPES['TANKER'],
+            position={"lat": "37° 40.4575' N", "lon": "122° 22.2460' W"},
+            navigation_status=AISVessel.NAV_STATUS['AT_ANCHOR'],
+            speed=0.0
         ),
+        AISVessel(
+            mmsi=366123458,
+            vessel_name="DISABLED LADY",
+            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            position={"lat": "37° 40.5575' N", "lon": "122° 22.3460' W"},
+            navigation_status=AISVessel.NAV_STATUS['NOT_UNDER_COMMAND'],
+            speed=0.1
+        ),
+        AISVessel(
+            mmsi=366123459,
+            vessel_name="DREDGER ONE",
+            ship_type=AISVessel.SHIP_TYPES['DREDGER'],
+            position={"lat": "37° 40.6575' N", "lon": "122° 22.4460' W"},
+            navigation_status=AISVessel.NAV_STATUS['RESTRICTED_MANEUVER'],
+            speed=3.0
+        ),
+        AISVessel(
+            mmsi=366123460,
+            vessel_name="DEEP DRAFT",
+            ship_type=AISVessel.SHIP_TYPES['TANKER'],
+            draft=15.5,
+            position={"lat": "37° 40.7575' N", "lon": "122° 22.5460' W"},
+            navigation_status=AISVessel.NAV_STATUS['CONSTRAINED_DRAFT'],
+            speed=8.0
+        ),
+        AISVessel(
+            mmsi=366123461,
+            vessel_name="PIER SIDE",
+            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            position={"lat": "37° 40.8575' N", "lon": "122° 22.6460' W"},
+            navigation_status=AISVessel.NAV_STATUS['MOORED'],
+            speed=0.0
+        ),
+        AISVessel(
+            mmsi=366123462,
+            vessel_name="ON THE ROCKS",
+            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            position={"lat": "37° 40.9575' N", "lon": "122° 22.7460' W"},
+            navigation_status=AISVessel.NAV_STATUS['AGROUND'],
+            speed=0.0
+        ),
+        AISVessel(
+            mmsi=366123463,
+            vessel_name="FISHING MASTER",
+            ship_type=AISVessel.SHIP_TYPES['FISHING'],
+            position={"lat": "37° 41.0575' N", "lon": "122° 22.8460' W"},
+            navigation_status=AISVessel.NAV_STATUS['FISHING'],
+            speed=4.5
+        ),
+        AISVessel(
+            mmsi=366123464,
+            vessel_name="WIND WALKER",
+            ship_type=AISVessel.SHIP_TYPES['SAILING'],
+            position={"lat": "37° 41.1575' N", "lon": "122° 22.9460' W"},
+            navigation_status=AISVessel.NAV_STATUS['UNDERWAY_SAILING'],
+            speed=6.0
+        )
     ]
 
     logging.info("Starting simulation...")
