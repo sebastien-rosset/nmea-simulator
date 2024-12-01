@@ -6,6 +6,15 @@ import numpy as np
 from datetime import datetime
 import time
 
+c# Previous imports remain the same
+import tkinter as tk
+import math
+import numpy as np
+from datetime import datetime
+import time
+
+# WindDisplay and WaveMotionSimulator classes remain the same
+
 class BoatDisplay(tk.Frame):
     def __init__(self, master, simulator):
         super().__init__(master)
@@ -29,18 +38,59 @@ class BoatDisplay(tk.Frame):
         self.hull = None
         self.mast = None
         self.waves = []
+        self.heel_indicator = None
+        self.heel_text = None
         self.create_waves()
+        
+        # Add heel angle label
+        self.heel_label = tk.Label(self, text="Heel: 0°", font=('Arial', 12))
+        self.heel_label.pack()
         
         # Start updates
         self.update_display()
     
     def create_waves(self):
-        # Create multiple wave curves
+        # Previous wave creation code remains the same
         wave_points = []
         for i in range(0, self.canvas_size[0] + 20, 20):
             wave_points.extend([i, self.center[1]])
         self.waves = self.canvas.create_line(wave_points, smooth=True, 
                                            fill='blue', width=2)
+    
+    def draw_heel_indicator(self, x, y, roll_deg):
+        # Delete old heel indicator if it exists
+        if self.heel_indicator:
+            self.canvas.delete(self.heel_indicator)
+        if self.heel_text:
+            self.canvas.delete(self.heel_text)
+        
+        # Draw arc for heel indicator
+        radius = 40
+        start_angle = -90 - 45  # Start 45 degrees to port
+        end_angle = -90 + 45    # End 45 degrees to starboard
+        
+        # Create arc
+        self.heel_indicator = self.canvas.create_arc(
+            x - radius, y - radius,
+            x + radius, y + radius,
+            start=start_angle, extent=90,
+            style='arc', outline='red', width=2
+        )
+        
+        # Draw indicator line
+        line_x = x + radius * math.cos(math.radians(-90 + roll_deg))
+        line_y = y + radius * math.sin(math.radians(-90 + roll_deg))
+        self.heel_indicator = self.canvas.create_line(
+            x, y, line_x, line_y,
+            fill='red', width=2, arrow='last'
+        )
+        
+        # Add heel angle text
+        self.heel_text = self.canvas.create_text(
+            x, y - radius - 10,
+            text=f"{abs(roll_deg):.1f}°{'P' if roll_deg < 0 else 'S'}",
+            font=('Arial', 10), fill='red'
+        )
     
     def update_display(self):
         t = time.time()
@@ -83,11 +133,18 @@ class BoatDisplay(tk.Frame):
                                           mast_top[0], mast_top[1], 
                                           fill='black', width=3)
         
+        # Update heel indicator
+        self.draw_heel_indicator(self.center[0], boat_center_y, roll_deg)
+        
+        # Update heel angle label
+        self.heel_label.config(
+            text=f"Heel: {abs(roll_deg):.1f}°{'Port' if roll_deg < 0 else 'Starboard'}")
+        
         # Schedule next update
         self.after(50, self.update_display)
-    
+
     def calculate_hull_points(self, x, y, roll_deg):
-        # Define hull points relative to center
+        # Previous hull point calculation code remains the same
         points = [
             (-self.boat_width//2, -self.boat_height//2),
             (self.boat_width//2, -self.boat_height//2),
@@ -95,14 +152,11 @@ class BoatDisplay(tk.Frame):
             (-self.boat_width//2, self.boat_height//2)
         ]
         
-        # Rotate points
         rotated_points = []
         for px, py in points:
-            # Rotate point around center
             angle = math.radians(roll_deg)
             rx = px * math.cos(angle) - py * math.sin(angle)
             ry = px * math.sin(angle) + py * math.cos(angle)
-            # Translate to final position
             rotated_points.extend([x + rx, y + ry])
         
         return rotated_points
