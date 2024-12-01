@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from socket import socket, AF_INET, SOCK_DGRAM
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, UTC
 import logging
 import math
@@ -13,6 +13,50 @@ from typing import List, Dict, Optional, Tuple, Union
 # Set up logging with timestamp, level, and message
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+def parse_coordinate(coord: Union[str, float, int]) -> float:
+    """
+    Parse coordinate string in various formats or return numeric value.
+    Supports:
+    - Decimal degrees (123.456)
+    - Degrees decimal minutes ("37° 40.3574' N" or "37 40.3574 N")
+    - Basic directional ("122° W" or "122 W")
+
+    Args:
+        coord: Coordinate as string or number
+
+    Returns:
+        float: Decimal degrees (negative for West/South)
+    """
+    if isinstance(coord, (float, int)):
+        return float(coord)
+
+    # Remove special characters and extra spaces
+    clean_coord = coord.replace("°", " ").replace("'", " ").replace('"', " ")
+    clean_coord = " ".join(clean_coord.split())
+
+    # Try to parse different formats
+    try:
+        # Check for directional format first
+        match = re.match(r"^(-?\d+\.?\d*)\s*([NSEW])$", clean_coord)
+        if match:
+            value = float(match.group(1))
+            direction = match.group(2)
+            return -value if direction in ["W", "S"] else value
+
+        # Check for degrees decimal minutes format
+        match = re.match(r"^(-?\d+)\s+(\d+\.?\d*)\s*([NSEW])$", clean_coord)
+        if match:
+            degrees = float(match.group(1))
+            minutes = float(match.group(2))
+            direction = match.group(3)
+            value = degrees + minutes / 60
+            return -value if direction in ["W", "S"] else value
+
+        # Try simple float conversion
+        return float(clean_coord)
+
+    except (ValueError, AttributeError) as e:
+        raise ValueError(f"Unable to parse coordinate: {coord}") from e
 @dataclass
 class AISVessel:
     """Class to hold AIS vessel data"""
@@ -24,13 +68,21 @@ class AISVessel:
     length: int = 100  # meters
     beam: int = 20  # meters
     draft: float = 5.0  # meters
-    position: Dict[str, float] = None  # lat, lon
+    position: Dict[str, Union[str, float, int]] = field(default_factory=lambda: {"lat": 0, "lon": 0})
     sog: float = 0.0  # Speed over ground in knots
     cog: float = 0.0  # Course over ground in degrees
     heading: float = 0.0  # True heading in degrees
     nav_status: int = 0  # 0=Under way using engine
     rot: float = 0.0  # Rate of turn in deg/min
 
+    def __post_init__(self):
+        """Parse position coordinates after initialization if they're strings"""
+        if self.position:
+            parsed_position = {}
+            for key in ['lat', 'lon']:
+                if key in self.position:
+                    parsed_position[key] = parse_coordinate(self.position[key])
+            self.position = parsed_position
 
 class AISEncoder:
     """Encode AIS messages"""
@@ -86,18 +138,26 @@ class AISEncoder:
     @staticmethod
     def encode_position_report(vessel: AISVessel) -> str:
         """Encode AIS Position Report (Message Type 1)"""
+        # Ensure ROT is properly encoded (-128 to 127)
+        rot = min(max(int(vessel.rot * 4.733), -127), 127) if vessel.rot != 0 else 128
+
         binary = ""
         binary += AISEncoder.encode_int(1, 6)  # Message Type
         binary += AISEncoder.encode_int(0, 2)  # Repeat Indicator
         binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
         binary += AISEncoder.encode_int(vessel.nav_status, 4)  # Navigation Status
-        binary += AISEncoder.encode_int(int(vessel.rot), 8)  # Rate of Turn
+        binary += AISEncoder.encode_int(rot, 8)  # Rate of Turn (encoded)
         binary += AISEncoder.encode_float(vessel.sog, 10, 10)  # Speed Over Ground
-        binary += AISEncoder.encode_int(1, 1)  # Position Accuracy
-        binary += AISEncoder.encode_float(vessel.position['lon'], 28, 600000)  # Longitude
-        binary += AISEncoder.encode_float(vessel.position['lat'], 27, 600000)  # Latitude
+        binary += AISEncoder.encode_int(1, 1)  # Position Accuracy (high=1)
+        
+        # Convert coordinates to AIS format (minutes * 10000)
+        lon = int(vessel.position['lon'] * 600000)
+        lat = int(vessel.position['lat'] * 600000)
+        binary += AISEncoder.encode_int(lon, 28)  # Longitude
+        binary += AISEncoder.encode_int(lat, 27)  # Latitude
+        
         binary += AISEncoder.encode_float(vessel.cog, 12, 10)  # Course Over Ground
-        binary += AISEncoder.encode_float(vessel.heading, 9, 1)  # True Heading
+        binary += AISEncoder.encode_int(int(vessel.heading), 9)  # True Heading
         binary += AISEncoder.encode_int(int(datetime.now().second), 6)  # Timestamp
         binary += AISEncoder.encode_int(0, 2)  # Maneuver Indicator
         binary += AISEncoder.encode_int(0, 3)  # Spare
@@ -115,17 +175,18 @@ class AISEncoder:
         binary += AISEncoder.encode_int(vessel.mmsi, 30)  # MMSI
         binary += AISEncoder.encode_int(0, 2)  # AIS Version
         binary += AISEncoder.encode_int(vessel.mmsi, 30)  # IMO Number
-        binary += AISEncoder.encode_string(vessel.callsign, 42)  # Callsign
-        binary += AISEncoder.encode_string(vessel.name, 120)  # Vessel Name
+        binary += AISEncoder.encode_string(vessel.callsign, 42)  # Callsign (7 chars)
+        binary += AISEncoder.encode_string(vessel.name, 120)  # Vessel Name (20 chars)
         binary += AISEncoder.encode_int(vessel.ship_type, 8)  # Ship Type
         binary += AISEncoder.encode_int(vessel.length, 9)  # Length
         binary += AISEncoder.encode_int(vessel.beam, 6)  # Beam
-        binary += AISEncoder.encode_float(vessel.draft, 8, 10)  # Draft
-        binary += AISEncoder.encode_int(0, 20)  # Destination
-        binary += AISEncoder.encode_int(0, 6)  # ETA month/day
-        binary += AISEncoder.encode_int(0, 4)  # ETA hour
+        binary += AISEncoder.encode_int(int(vessel.draft * 10), 8)  # Draft (in decimeters)
+        binary += AISEncoder.encode_string("", 120)  # Destination (20 chars)
+        binary += AISEncoder.encode_int(0, 6)  # ETA month
+        binary += AISEncoder.encode_int(0, 5)  # ETA day
+        binary += AISEncoder.encode_int(0, 5)  # ETA hour
         binary += AISEncoder.encode_int(0, 6)  # ETA minute
-        binary += "0" * 6  # Padding
+        binary += AISEncoder.encode_int(0, 1)  # Electronic position fixing device type
 
         return AISEncoder.binary_to_payload(binary)
 
@@ -215,8 +276,8 @@ class BasicNavSimulator:
         if not sentence.startswith("$"):
             sentence = "$" + sentence
             
-        # 10% chance of corruption
-        should_corrupt = random.random() < 0.10
+        # chance of corruption
+        should_corrupt = random.random() < 0.00001
         
         if should_corrupt:
             corruption_type = random.choice(['checksum', 'non_printable'])
@@ -266,51 +327,6 @@ class BasicNavSimulator:
         degrees = int(lon)
         minutes = (lon - degrees) * 60
         return f"{degrees:03d}{minutes:06.3f},{hemisphere}"
-
-    def parse_coordinate(self, coord: Union[str, float, int]) -> float:
-        """
-        Parse coordinate string in various formats or return numeric value.
-        Supports:
-        - Decimal degrees (123.456)
-        - Degrees decimal minutes ("37° 40.3574' N" or "37 40.3574 N")
-        - Basic directional ("122° W" or "122 W")
-
-        Args:
-            coord: Coordinate as string or number
-
-        Returns:
-            float: Decimal degrees (negative for West/South)
-        """
-        if isinstance(coord, (float, int)):
-            return float(coord)
-
-        # Remove special characters and extra spaces
-        clean_coord = coord.replace("°", " ").replace("'", " ").replace('"', " ")
-        clean_coord = " ".join(clean_coord.split())
-
-        # Try to parse different formats
-        try:
-            # Check for directional format first
-            match = re.match(r"^(-?\d+\.?\d*)\s*([NSEW])$", clean_coord)
-            if match:
-                value = float(match.group(1))
-                direction = match.group(2)
-                return -value if direction in ["W", "S"] else value
-
-            # Check for degrees decimal minutes format
-            match = re.match(r"^(-?\d+)\s+(\d+\.?\d*)\s*([NSEW])$", clean_coord)
-            if match:
-                degrees = float(match.group(1))
-                minutes = float(match.group(2))
-                direction = match.group(3)
-                value = degrees + minutes / 60
-                return -value if direction in ["W", "S"] else value
-
-            # Try simple float conversion
-            return float(clean_coord)
-
-        except (ValueError, AttributeError) as e:
-            raise ValueError(f"Unable to parse coordinate: {coord}") from e
 
     def calculate_distance(
         self, lat1: float, lon1: float, lat2: float, lon2: float
@@ -1008,8 +1024,8 @@ class BasicNavSimulator:
         parsed_waypoints = []
         for wp in waypoints:
             parsed_wp = {
-                "lat": self.parse_coordinate(wp["lat"]),
-                "lon": self.parse_coordinate(wp["lon"]),
+                "lat": parse_coordinate(wp["lat"]),
+                "lon": parse_coordinate(wp["lon"]),
             }
             parsed_waypoints.append(parsed_wp)
 
@@ -1100,34 +1116,34 @@ if __name__ == "__main__":
     ais_vessels = [
         AISVessel(
             mmsi=366123456,
-            name="GOLDEN GATE",
+            name="BAY TRADER",
             callsign="WD123",
             ship_type=70,
             length=200,
             beam=30,
             draft=12.0,
-            position={"lat": 37.4049, "lon": -122.2294},
+            position={"lat": "37° 40.3575' N", "lon": "122° 22.1458' W"},
             sog=12.0,
             cog=270.0,
             heading=270.0,
-            nav_status=0,
+            nav_status=0, # Under way using engine
             rot=0.0
         ),
         AISVessel(
             mmsi=366789012,
-            name="BAY TRADER",
+            name="WINDWALKER",
             callsign="WD456",
-            ship_type=80,
-            length=150,
-            beam=25,
-            draft=8.0,
-            position={"lat": 37.4085, "lon": -122.208},
-            sog=8.0,
+            ship_type=36,  # Sailing vessel
+            length=15,  # 15 meter sailboat
+            beam=4,     # 4 meter beam
+            draft=2.1,  # 2.1 meter draft
+            position={"lat": "37° 40.3573' N", "lon": "122° 22.1458' W"},
+            sog=6.0,    # 6 knots
             cog=90.0,
             heading=90.0,
-            nav_status=0,
+            nav_status=8,  # Under way sailing
             rot=0.0
-        )
+        ),
     ]
 
     logging.info("Starting simulation...")
