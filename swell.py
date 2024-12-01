@@ -6,29 +6,138 @@ import numpy as np
 from datetime import datetime
 import time
 
+class BoatDisplay(tk.Frame):
+    def __init__(self, master, simulator):
+        super().__init__(master)
+        self.simulator = simulator
+        
+        # Configure the boat display
+        self.canvas_size = (400, 300)  # width, height
+        self.center = (self.canvas_size[0] // 2, self.canvas_size[1] // 2)
+        
+        # Create canvas
+        self.canvas = tk.Canvas(self, width=self.canvas_size[0], 
+                              height=self.canvas_size[1], bg='lightblue')
+        self.canvas.pack(pady=10)
+        
+        # Boat dimensions
+        self.boat_width = 60
+        self.boat_height = 20
+        self.mast_height = 150  # pixels
+        
+        # Create boat elements
+        self.hull = None
+        self.mast = None
+        self.waves = []
+        self.create_waves()
+        
+        # Start updates
+        self.update_display()
+    
+    def create_waves(self):
+        # Create multiple wave curves
+        wave_points = []
+        for i in range(0, self.canvas_size[0] + 20, 20):
+            wave_points.extend([i, self.center[1]])
+        self.waves = self.canvas.create_line(wave_points, smooth=True, 
+                                           fill='blue', width=2)
+    
+    def update_display(self):
+        t = time.time()
+        
+        # Calculate roll angle
+        roll = self.simulator.max_roll * np.sin(2 * np.pi * t / self.simulator.wave_period)
+        roll_deg = math.degrees(roll)
+        
+        # Update wave position
+        wave_points = []
+        wave_amplitude = 20
+        for i in range(0, self.canvas_size[0] + 20, 10):
+            x = i
+            y = self.center[1] + wave_amplitude * math.sin(
+                2 * math.pi * (x / 100 - t / self.simulator.wave_period))
+            wave_points.extend([x, y])
+        self.canvas.coords(self.waves, *wave_points)
+        
+        # Calculate boat position
+        boat_center_y = self.center[1] + 10 * math.sin(
+            2 * math.pi * t / self.simulator.wave_period)
+        
+        # Delete old boat elements
+        if self.hull:
+            self.canvas.delete(self.hull)
+        if self.mast:
+            self.canvas.delete(self.mast)
+        
+        # Draw hull
+        hull_points = self.calculate_hull_points(self.center[0], boat_center_y, roll_deg)
+        self.hull = self.canvas.create_polygon(hull_points, fill='gray')
+        
+        # Draw mast
+        mast_base = (self.center[0], boat_center_y)
+        mast_top = (
+            self.center[0] + self.mast_height * math.sin(math.radians(roll_deg)),
+            boat_center_y - self.mast_height * math.cos(math.radians(roll_deg))
+        )
+        self.mast = self.canvas.create_line(mast_base[0], mast_base[1], 
+                                          mast_top[0], mast_top[1], 
+                                          fill='black', width=3)
+        
+        # Schedule next update
+        self.after(50, self.update_display)
+    
+    def calculate_hull_points(self, x, y, roll_deg):
+        # Define hull points relative to center
+        points = [
+            (-self.boat_width//2, -self.boat_height//2),
+            (self.boat_width//2, -self.boat_height//2),
+            (self.boat_width//2, self.boat_height//2),
+            (-self.boat_width//2, self.boat_height//2)
+        ]
+        
+        # Rotate points
+        rotated_points = []
+        for px, py in points:
+            # Rotate point around center
+            angle = math.radians(roll_deg)
+            rx = px * math.cos(angle) - py * math.sin(angle)
+            ry = px * math.sin(angle) + py * math.cos(angle)
+            # Translate to final position
+            rotated_points.extend([x + rx, y + ry])
+        
+        return rotated_points
+
 class WindDisplay(tk.Tk):
     def __init__(self, simulator):
         super().__init__()
         
         self.simulator = simulator
-        self.title("Wind Display")
+        self.title("Wind and Motion Simulator")
         
-        # Configure the main window
+        # Create main container
+        container = tk.Frame(self)
+        container.pack(side="top", fill="both", expand=True)
+        
+        # Configure the compass display
         self.canvas_size = 400
         self.center = self.canvas_size // 2
         self.compass_radius = 150
         
-        # Create canvas
-        self.canvas = tk.Canvas(self, width=self.canvas_size, height=self.canvas_size, 
-                              bg='white')
+        # Create compass canvas
+        self.canvas = tk.Canvas(container, width=self.canvas_size, 
+                              height=self.canvas_size, bg='white')
         self.canvas.pack(pady=20)
         
+        # Create boat motion display
+        self.boat_display = BoatDisplay(container, simulator)
+        self.boat_display.pack()
+        
         # Create data labels
-        self.aws_label = tk.Label(self, text="AWS: 0.0 m/s", font=('Arial', 14))
+        self.aws_label = tk.Label(container, text="AWS: 0.0 m/s", font=('Arial', 14))
         self.aws_label.pack()
-        self.awa_label = tk.Label(self, text="AWA: 0°", font=('Arial', 14))
+        self.awa_label = tk.Label(container, text="AWA: 0°", font=('Arial', 14))
         self.awa_label.pack()
-        self.time_label = tk.Label(self, text="", font=('Arial', 10))
+        self.time_label = tk.Label(container, text="", font=('Arial', 10))
         self.time_label.pack()
         
         # Draw static compass elements
