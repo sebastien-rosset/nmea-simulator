@@ -6,15 +6,6 @@ import numpy as np
 from datetime import datetime
 import time
 
-c# Previous imports remain the same
-import tkinter as tk
-import math
-import numpy as np
-from datetime import datetime
-import time
-
-# WindDisplay and WaveMotionSimulator classes remain the same
-
 class BoatDisplay(tk.Frame):
     def __init__(self, master, simulator):
         super().__init__(master)
@@ -244,7 +235,7 @@ class WindDisplay(tk.Tk):
     def update_display(self):
         # Get new data from simulator
         t = time.time()
-        speed, direction = self.simulator.calculate_apparent_wind(t)
+        speed, direction, roll = self.simulator.calculate_apparent_wind(t)  # Now unpacking three values
         
         # Update arrow
         self.update_arrow(direction)
@@ -263,14 +254,19 @@ class WaveMotionSimulator:
         self.wave_height = wave_height
         self.wave_period = wave_period
         
-        # Derived parameters
-        self.max_roll = np.deg2rad(25)  # Maximum roll angle in radians
-        self.max_pitch = np.deg2rad(15)  # Maximum pitch angle in radians
+        # Adjusted parameters for more realistic motion
+        # For a 2m wave, maximum roll should be around 8-10 degrees
+        self.base_max_roll = np.deg2rad(4)  # Base roll per meter of wave height
+        self.max_roll = self.base_max_roll * self.wave_height
+        self.max_pitch = np.deg2rad(5)  # Reduced pitch angle
+        
+        # Add damping factor to simulate keel effect
+        self.roll_damping = 0.7  # Higher value means more damping
         
     def calculate_apparent_wind(self, t):
         """Calculate apparent wind speed and direction at time t"""
-        # Calculate boat motion components
-        roll = self.max_roll * np.sin(2 * np.pi * t / self.wave_period)
+        # Calculate damped roll motion
+        roll = self.max_roll * np.sin(2 * np.pi * t / self.wave_period) * np.exp(-self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period)))
         pitch = self.max_pitch * np.sin(2 * np.pi * t / self.wave_period + np.pi/4)
         
         # Calculate vertical velocity at masthead due to roll
@@ -291,7 +287,15 @@ class WaveMotionSimulator:
         # Convert to compass bearing (0-360)
         apparent_wind_direction = (apparent_wind_direction + 360) % 360
         
-        return apparent_wind_speed, apparent_wind_direction
+        return apparent_wind_speed, apparent_wind_direction, roll
+
+    def update_wave_parameters(self, wave_height=None, wave_period=None):
+        """Update wave parameters and recalculate motion characteristics"""
+        if wave_height is not None:
+            self.wave_height = wave_height
+            self.max_roll = self.base_max_roll * self.wave_height
+        if wave_period is not None:
+            self.wave_period = wave_period
 
 if __name__ == "__main__":
     # Create simulator instance
