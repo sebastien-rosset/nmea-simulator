@@ -206,16 +206,49 @@ class BasicNavSimulator:
         return f"{checksum:02X}"
 
     def send_nmea(self, sentence):
+        """
+        Send NMEA sentence with random corruption (10% chance)
+        Types of corruption:
+        1. Wrong checksum
+        2. Non-printable characters (with correct checksum)
+        """
         if not sentence.startswith("$"):
             sentence = "$" + sentence
+            
+        # 10% chance of corruption
+        should_corrupt = random.random() < 0.10
+        
+        if should_corrupt:
+            corruption_type = random.choice(['checksum', 'non_printable'])
+            
+            if corruption_type == 'checksum':
+                # Calculate correct checksum
+                checksum = self.calculate_nmea_checksum(sentence)
+                # Generate an incorrect checksum by adding 1 to the correct one
+                wrong_checksum = f"{(int(checksum, 16) + 1) % 256:02X}"
+                full_sentence = f"{sentence}*{wrong_checksum}\r\n"
+                logging.info(f"Sending NMEA with corrupted checksum: {full_sentence.strip()}")
+                
+            else:  # non_printable
+                # Insert a random non-printable character (ASCII 1-31)
+                non_printable = chr(random.randint(1, 31))
+                # Insert at random position after $ but before any potential *
+                asterisk_pos = sentence.find('*')
+                if asterisk_pos == -1:
+                    asterisk_pos = len(sentence)
+                insert_pos = random.randint(1, asterisk_pos - 1)
+                corrupted_sentence = sentence[:insert_pos] + non_printable + sentence[insert_pos:]
+                
+                # Calculate checksum for the corrupted sentence
+                checksum = self.calculate_nmea_checksum(corrupted_sentence)
+                full_sentence = f"{corrupted_sentence}*{checksum}\r\n"
+                logging.info(f"Sending NMEA with non-printable character at position {insert_pos}")
+        else:
+            # Normal case - correct sentence with valid checksum
+            checksum = self.calculate_nmea_checksum(sentence)
+            full_sentence = f"{sentence}*{checksum}\r\n"
+            logging.info(f"Sending NMEA: {full_sentence.strip()}")
 
-        # Calculate checksum before adding terminators
-        checksum = self.calculate_nmea_checksum(sentence)
-        # Format complete sentence with checksum and terminators
-        full_sentence = f"{sentence}*{checksum}\r\n"
-        logging.info(f"Sending NMEA: {full_sentence.strip()}")
-        if not sentence.endswith("\r\n"):
-            sentence = sentence + "\r\n"
         self.sock.sendto(full_sentence.encode(), (self.udp_host, self.udp_port))
 
     def format_lat(self, lat):
@@ -456,6 +489,12 @@ class BasicNavSimulator:
             )
 
         self.send_nmea(rsa)
+
+    def send_unsupported_message(self):
+        """
+        Send NMEA message which is unsupported by OpenCPN.
+        """
+        self.send_nmea("GPZZZ,A,B,C,D")
 
     def send_vhw(self):
         """
@@ -1029,6 +1068,7 @@ class BasicNavSimulator:
                 self.send_rmb()  # Recommended Minimum Navigation Information
                 self.send_vhw()  # Water speed and heading
                 self.send_rsa()  # Rudder angle
+                self.send_unsupported_message()  # Unsupported message
 
                 # Send wind data
                 self.send_mwv(True)  # True wind
