@@ -138,7 +138,7 @@ class AISEncoder:
     @staticmethod
     def encode_position_report(vessel: AISVessel) -> str:
         """Encode AIS Position Report (Message Type 1)"""
-        # Ensure ROT is properly encoded (-128 to 127)
+        # Calculate ROT
         rot = min(max(int(vessel.rot * 4.733), -127), 127) if vessel.rot != 0 else 128
 
         binary = ""
@@ -164,7 +164,26 @@ class AISEncoder:
         binary += "1"  # RAIM flag
         binary += AISEncoder.encode_int(0, 19)  # Radio status
 
+        logging.debug(f"Position report binary: {binary}")
+        logging.debug(f"Binary length: {len(binary)} bits")
+        
         return AISEncoder.binary_to_payload(binary)
+
+    @staticmethod
+    def binary_to_payload(binary: str) -> str:
+        """Convert binary string to AIS ASCII payload"""
+        # Pad to multiple of 6 bits
+        padding = (6 - (len(binary) % 6)) % 6
+        binary += "0" * padding
+
+        # Convert each 6 bits to AIS character
+        result = ""
+        for i in range(0, len(binary), 6):
+            chunk = binary[i:i + 6]
+            value = int(chunk, 2)
+            result += AISEncoder.__ais_chars[value]
+
+        return result
 
     @staticmethod
     def encode_static_data(vessel: AISVessel) -> str:
@@ -277,7 +296,7 @@ class BasicNavSimulator:
             sentence = "$" + sentence
             
         # chance of corruption
-        should_corrupt = random.random() < 0.00001
+        should_corrupt = random.random() < 0.0
         
         if should_corrupt:
             corruption_type = random.choice(['checksum', 'non_printable'])
@@ -763,15 +782,24 @@ class BasicNavSimulator:
         fragments = [body[i:i + max_len] for i in range(0, len(body), max_len)]
         
         for i, fragment in enumerate(fragments):
-            # Calculate fragment count and number
-            frag_count = len(fragments)
-            frag_num = i + 1
+            # Calculate fill bits needed for proper 6-bit boundary
+            fill_bits = 0
+            if len(fragment) % 6 != 0:
+                fill_bits = 6 - (len(fragment) % 6)
+                
+            # Build AIVDM sentence without the trailing number
+            sentence = f"!AIVDM,{len(fragments)},{i+1},,{channel},{fragment},{fill_bits}"
             
-            # Build AIVDM sentence
-            sentence = f"!AIVDM,{frag_count},{frag_num},,{channel},{fragment},0"
-            
-            # Add checksum and send
-            self.send_nmea(sentence)
+            # Calculate checksum starting after "!"
+            checksum = 0
+            for char in sentence[1:]:
+                checksum ^= ord(char)
+                
+            # Send the message with proper line ending
+            full_sentence = f"{sentence}*{checksum:02X}\r\n"
+            logging.debug(f"Sending AIS message: {full_sentence.strip()}")
+            self.sock.sendto(full_sentence.encode(), (self.udp_host, self.udp_port))
+
 
     def update_ais_vessels(self, delta_time: float):
         """Update AIS vessel positions and send messages"""
