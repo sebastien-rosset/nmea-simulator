@@ -1269,7 +1269,7 @@ if __name__ == "__main__":
             position={"lat": "37° 40.3575' N", "lon": "122° 22.1460' W"},
             navigation_status=AISVessel.NAV_STATUS['UNDERWAY_ENGINE'],
             speed=12.0,
-            course=270.0
+            course=270.0,
         ),
         AISVessel(
             mmsi=366123457,
@@ -1277,7 +1277,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['TANKER'],
             position={"lat": "37° 40.4575' N", "lon": "122° 22.2460' W"},
             navigation_status=AISVessel.NAV_STATUS['AT_ANCHOR'],
-            speed=0.0
+            speed=0.0,
         ),
         AISVessel(
             mmsi=366123458,
@@ -1285,7 +1285,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['CARGO'],
             position={"lat": "37° 40.5575' N", "lon": "122° 22.3460' W"},
             navigation_status=AISVessel.NAV_STATUS['NOT_UNDER_COMMAND'],
-            speed=0.1
+            speed=0.1,
         ),
         AISVessel(
             mmsi=366123459,
@@ -1293,7 +1293,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['DREDGER'],
             position={"lat": "37° 40.6575' N", "lon": "122° 22.4460' W"},
             navigation_status=AISVessel.NAV_STATUS['RESTRICTED_MANEUVER'],
-            speed=3.0
+            speed=3.0,
         ),
         AISVessel(
             mmsi=366123460,
@@ -1302,7 +1302,7 @@ if __name__ == "__main__":
             draft=15.5,
             position={"lat": "37° 40.7575' N", "lon": "122° 22.5460' W"},
             navigation_status=AISVessel.NAV_STATUS['CONSTRAINED_DRAFT'],
-            speed=8.0
+            speed=15.0,
         ),
         AISVessel(
             mmsi=366123461,
@@ -1310,7 +1310,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['CARGO'],
             position={"lat": "37° 40.8575' N", "lon": "122° 22.6460' W"},
             navigation_status=AISVessel.NAV_STATUS['MOORED'],
-            speed=0.0
+            speed=0.0,
         ),
         AISVessel(
             mmsi=366123462,
@@ -1318,7 +1318,8 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['CARGO'],
             position={"lat": "37° 40.9575' N", "lon": "122° 22.7460' W"},
             navigation_status=AISVessel.NAV_STATUS['AGROUND'],
-            speed=0.0
+            speed=15.0,
+            course=50.0,
         ),
         AISVessel(
             mmsi=366123463,
@@ -1326,7 +1327,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['FISHING'],
             position={"lat": "37° 41.0575' N", "lon": "122° 22.8460' W"},
             navigation_status=AISVessel.NAV_STATUS['FISHING'],
-            speed=4.5
+            speed=4.5,
         ),
         AISVessel(
             mmsi=366123464,
@@ -1334,7 +1335,7 @@ if __name__ == "__main__":
             ship_type=AISVessel.SHIP_TYPES['SAILING'],
             position={"lat": "37° 40.3775' N", "lon": "122° 22.1460' W"},
             navigation_status=AISVessel.NAV_STATUS['UNDERWAY_SAILING'],
-            speed=6.0
+            speed=6.0,
         )
     ]
 

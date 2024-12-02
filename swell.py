@@ -394,6 +394,13 @@ class WaveMotionSimulator:
         self.max_roll = self.base_max_roll * self.wave_height
         self.roll_damping = 0.7
 
+        # Wind vane physical characteristics
+        self.vane_inertia = 0.8  # Higher value means more resistance to quick changes
+        self.vane_damping = 0.6  # Air resistance damping factor
+        self.last_awa = 0.0      # Keep track of previous angle for inertia calculation
+        self.awa_rate = 0.0      # Angular velocity of the vane
+        self.last_t = None       # For calculating time delta
+
     def update_parameters(
         self, tws=None, twd=None, sog=None, cog=None, roll_effect=None
     ):
@@ -409,67 +416,116 @@ class WaveMotionSimulator:
         if roll_effect is not None:
             self.roll_effect = roll_effect
 
-    def calculate_apparent_wind(
-        self, boat_speed, boat_direction, wind_speed, wind_direction
-    ):
+    def calculate_apparent_wind(self, boat_speed, boat_direction, wind_speed, wind_direction):
         """Calculate apparent wind speed and angle from true wind and boat motion"""
         # Convert to radians
         boat_dir_rad = math.radians(boat_direction)
         wind_dir_rad = math.radians(wind_direction)
-
+        
         # Convert to vector components
         boat_x = boat_speed * math.sin(boat_dir_rad)
         boat_y = boat_speed * math.cos(boat_dir_rad)
         wind_x = wind_speed * math.sin(wind_dir_rad)
         wind_y = wind_speed * math.cos(wind_dir_rad)
-
+        
         # Calculate relative wind components
         rel_x = wind_x - boat_x
         rel_y = wind_y - boat_y
-
+        
         # Calculate apparent wind speed and direction
         aws = math.sqrt(rel_x**2 + rel_y**2)
         awa = math.degrees(math.atan2(rel_x, rel_y))
         if awa < 0:
             awa += 360
-
+        
         return aws, awa
 
     def calculate_all_wind(self, t):
-        """Calculate both true and apparent wind parameters"""
+        """Calculate both true and apparent wind parameters with realistic wind vane behavior"""
+        # Initialize time tracking on first call
+        if self.last_t is None:
+            self.last_t = t
+            
+        dt = t - self.last_t
+        self.last_t = t
+        
         # Convert speeds from knots to m/s for internal calculations
         tws_ms = self.tws * 0.514444
         sog_ms = self.sog * 0.514444
-
-        # Calculate base apparent wind
-        aws, awa = self.calculate_apparent_wind(sog_ms, self.cog, tws_ms, self.twd)
-
-        # Add roll effect if enabled
+        
+        # Calculate roll effect
+        roll = self.max_roll * np.sin(2 * np.pi * t / self.wave_period) * \
+               np.exp(-self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period)))
+        roll_rate = self.max_roll * (2 * np.pi / self.wave_period) * \
+                    np.cos(2 * np.pi * t / self.wave_period)
+        
         if self.roll_effect:
-            roll = (
-                self.max_roll
-                * np.sin(2 * np.pi * t / self.wave_period)
-                * np.exp(
-                    -self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period))
-                )
-            )
-            roll_rate = (
-                self.max_roll
-                * (2 * np.pi / self.wave_period)
-                * np.cos(2 * np.pi * t / self.wave_period)
-            )
-
             # Calculate vertical velocity at masthead due to roll
             roll_velocity = roll_rate * self.mast_height
-
-            # Add roll velocity to apparent wind speed
-            aws = math.sqrt(aws**2 + roll_velocity**2)
-
-        # Convert speed back to knots for display
+            
+            # Calculate theoretical instantaneous wind direction based on roll velocity
+            if abs(roll_velocity) < 0.01:
+                target_awa = self.last_awa  # Keep current direction if barely moving
+            else:
+                # Wind direction based on vertical motion
+                target_awa = 90 if roll_velocity > 0 else 270
+            
+            # Calculate the difference in angle, handling the 0/360 wraparound
+            angle_diff = target_awa - self.last_awa
+            if angle_diff > 180:
+                angle_diff -= 360
+            elif angle_diff < -180:
+                angle_diff += 360
+                
+            # Apply inertia and damping to the vane movement
+            # Update angular velocity (awa_rate) based on the target direction
+            self.awa_rate += (angle_diff / self.vane_inertia) * dt
+            # Apply damping to angular velocity
+            self.awa_rate *= (1 - self.vane_damping * dt)
+            
+            # Update the AWA based on angular velocity
+            new_awa = self.last_awa + self.awa_rate * dt
+            
+            # Normalize to 0-360 range
+            while new_awa >= 360:
+                new_awa -= 360
+            while new_awa < 0:
+                new_awa += 360
+                
+            # Calculate AWS based on roll velocity
+            aws = abs(roll_velocity)
+            
+            self.last_awa = new_awa
+            aws_kts = aws / 0.514444
+            
+            return self.tws, self.twd, aws_kts, new_awa
+            
+        # If roll effect is disabled, calculate normal wind triangle
+        boat_dir_rad = math.radians(self.cog)
+        wind_dir_rad = math.radians(self.twd)
+        
+        # Boat motion vector components
+        boat_x = sog_ms * math.sin(boat_dir_rad)
+        boat_y = sog_ms * math.cos(boat_dir_rad)
+        
+        # True wind vector components
+        wind_x = tws_ms * math.sin(wind_dir_rad)
+        wind_y = tws_ms * math.cos(wind_dir_rad)
+        
+        # Calculate relative wind vector
+        rel_x = wind_x - boat_x
+        rel_y = wind_y - boat_y
+        
+        # Calculate apparent wind
+        aws = math.sqrt(rel_x**2 + rel_y**2)
+        awa = math.degrees(math.atan2(rel_x, rel_y))
+        if awa < 0:
+            awa += 360
+            
+        self.last_awa = awa
         aws_kts = aws / 0.514444
-
+        
         return self.tws, self.twd, aws_kts, awa
-
 
 if __name__ == "__main__":
     # Create simulator instance
