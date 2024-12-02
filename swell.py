@@ -12,87 +12,79 @@ class ControlPanel(tk.Frame):
     def __init__(self, master, simulator):
         super().__init__(master)
         self.simulator = simulator
-
+        
         # True Wind Controls
         tws_frame = ttk.LabelFrame(self, text="True Wind")
         tws_frame.pack(fill="x", padx=5, pady=5)
-
+        
+        # TWS Controls
         ttk.Label(tws_frame, text="TWS (knots):").grid(row=0, column=0, padx=5)
         self.tws_var = tk.DoubleVar(value=15.0)
-        self.tws_slider = ttk.Scale(
-            tws_frame,
-            from_=0,
-            to=60,
-            variable=self.tws_var,
-            orient="horizontal",
-            command=self.update_simulator,
-        )
+        self.tws_slider = ttk.Scale(tws_frame, from_=0, to=60, variable=self.tws_var,
+                                  orient="horizontal", command=self.update_simulator)
         self.tws_slider.grid(row=0, column=1, sticky="ew", padx=5)
-
+        self.tws_value_label = ttk.Label(tws_frame, text="15.0", width=5)
+        self.tws_value_label.grid(row=0, column=2, padx=5)
+        
+        # TWD Controls
         ttk.Label(tws_frame, text="TWD (degrees):").grid(row=1, column=0, padx=5)
         self.twd_var = tk.DoubleVar(value=180.0)
-        self.twd_slider = ttk.Scale(
-            tws_frame,
-            from_=0,
-            to=359,
-            variable=self.twd_var,
-            orient="horizontal",
-            command=self.update_simulator,
-        )
+        self.twd_slider = ttk.Scale(tws_frame, from_=0, to=359, variable=self.twd_var,
+                                  orient="horizontal", command=self.update_simulator)
         self.twd_slider.grid(row=1, column=1, sticky="ew", padx=5)
-
+        self.twd_value_label = ttk.Label(tws_frame, text="180", width=5)
+        self.twd_value_label.grid(row=1, column=2, padx=5)
+        
         # Boat Motion Controls
         boat_frame = ttk.LabelFrame(self, text="Boat Motion")
         boat_frame.pack(fill="x", padx=5, pady=5)
-
+        
+        # SOG Controls
         ttk.Label(boat_frame, text="SOG (knots):").grid(row=0, column=0, padx=5)
         self.sog_var = tk.DoubleVar(value=6.0)
-        self.sog_slider = ttk.Scale(
-            boat_frame,
-            from_=0,
-            to=15,
-            variable=self.sog_var,
-            orient="horizontal",
-            command=self.update_simulator,
-        )
+        self.sog_slider = ttk.Scale(boat_frame, from_=0, to=15, variable=self.sog_var,
+                                  orient="horizontal", command=self.update_simulator)
         self.sog_slider.grid(row=0, column=1, sticky="ew", padx=5)
-
+        self.sog_value_label = ttk.Label(boat_frame, text="6.0", width=5)
+        self.sog_value_label.grid(row=0, column=2, padx=5)
+        
+        # COG Controls
         ttk.Label(boat_frame, text="COG (degrees):").grid(row=1, column=0, padx=5)
         self.cog_var = tk.DoubleVar(value=90.0)
-        self.cog_slider = ttk.Scale(
-            boat_frame,
-            from_=0,
-            to=359,
-            variable=self.cog_var,
-            orient="horizontal",
-            command=self.update_simulator,
-        )
+        self.cog_slider = ttk.Scale(boat_frame, from_=0, to=359, variable=self.cog_var,
+                                  orient="horizontal", command=self.update_simulator)
         self.cog_slider.grid(row=1, column=1, sticky="ew", padx=5)
-
+        self.cog_value_label = ttk.Label(boat_frame, text="90", width=5)
+        self.cog_value_label.grid(row=1, column=2, padx=5)
+        
         # Mast Roll Effect Control
         roll_frame = ttk.LabelFrame(self, text="Roll Effect")
         roll_frame.pack(fill="x", padx=5, pady=5)
-
+        
         self.roll_effect_var = tk.BooleanVar(value=True)
-        self.roll_effect_check = ttk.Checkbutton(
-            roll_frame,
-            text="Enable Mast Roll Effect",
-            variable=self.roll_effect_var,
-            command=self.update_simulator,
-        )
+        self.roll_effect_check = ttk.Checkbutton(roll_frame, text="Enable Mast Roll Effect",
+                                                variable=self.roll_effect_var,
+                                                command=self.update_simulator)
         self.roll_effect_check.pack(padx=5, pady=5)
-
+        
         # Configure grid weights
         tws_frame.columnconfigure(1, weight=1)
         boat_frame.columnconfigure(1, weight=1)
-
+    
     def update_simulator(self, *args):
+        # Update value labels
+        self.tws_value_label.config(text=f"{self.tws_var.get():.1f}")
+        self.twd_value_label.config(text=f"{int(self.twd_var.get())}")
+        self.sog_value_label.config(text=f"{self.sog_var.get():.1f}")
+        self.cog_value_label.config(text=f"{int(self.cog_var.get())}")
+        
+        # Update simulator parameters
         self.simulator.update_parameters(
             tws=self.tws_var.get(),
             twd=self.twd_var.get(),
             sog=self.sog_var.get(),
             cog=self.cog_var.get(),
-            roll_effect=self.roll_effect_var.get(),
+            roll_effect=self.roll_effect_var.get()
         )
 
 
