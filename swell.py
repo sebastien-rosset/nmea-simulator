@@ -262,30 +262,27 @@ class WaveMotionSimulator:
         
         # Add damping factor to simulate keel effect
         self.roll_damping = 0.7  # Higher value means more damping
+
+        # Wind vane characteristics
+        self.vane_oscillation = 70  # Half the total oscillation range (100° total)
         
     def calculate_apparent_wind(self, t):
         """Calculate apparent wind speed and direction at time t"""
-        # Calculate damped roll motion
+        # Calculate damped roll motion for the boat
         roll = self.max_roll * np.sin(2 * np.pi * t / self.wave_period) * np.exp(-self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period)))
-        pitch = self.max_pitch * np.sin(2 * np.pi * t / self.wave_period + np.pi/4)
+        
+        # Calculate roll rate (derivative of roll angle)
+        roll_rate = self.max_roll * (2 * np.pi / self.wave_period) * np.cos(2 * np.pi * t / self.wave_period)
         
         # Calculate vertical velocity at masthead due to roll
-        roll_velocity = self.mast_height * np.cos(roll) * (
-            2 * np.pi / self.wave_period) * self.max_roll * np.cos(
-            2 * np.pi * t / self.wave_period)
+        roll_velocity = roll_rate * self.mast_height
         
-        # Calculate fore/aft velocity at masthead due to pitch
-        pitch_velocity = self.mast_height * np.cos(pitch) * (
-            2 * np.pi / self.wave_period) * self.max_pitch * np.cos(
-            2 * np.pi * t / self.wave_period + np.pi/4)
+        # Calculate apparent wind speed from masthead velocity
+        apparent_wind_speed = abs(roll_velocity)
         
-        # Calculate apparent wind speed (vector sum of velocities)
-        apparent_wind_speed = np.sqrt(roll_velocity**2 + pitch_velocity**2)
-        
-        # Calculate apparent wind direction
-        apparent_wind_direction = np.rad2deg(np.arctan2(roll_velocity, pitch_velocity))
-        # Convert to compass bearing (0-360)
-        apparent_wind_direction = (apparent_wind_direction + 360) % 360
+        # Calculate apparent wind direction with larger oscillation
+        # Using pure sine wave for wind vane as it has minimal damping
+        apparent_wind_direction = 180 + self.vane_oscillation * np.sin(2 * np.pi * t / self.wave_period)
         
         return apparent_wind_speed, apparent_wind_direction, roll
 
