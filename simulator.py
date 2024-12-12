@@ -13,7 +13,7 @@ from typing import List, Dict, Optional, Tuple, Union, NamedTuple
 
 # Set up logging with timestamp, level, and message
 logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
 
@@ -631,7 +631,7 @@ class BasicNavSimulator:
                 # Generate an incorrect checksum by adding 1 to the correct one
                 wrong_checksum = f"{(int(checksum, 16) + 1) % 256:02X}"
                 full_sentence = f"{sentence}*{wrong_checksum}\r\n"
-                logging.info(
+                logging.warn(
                     f"Sending NMEA with corrupted checksum: {full_sentence.strip()}"
                 )
 
@@ -650,14 +650,14 @@ class BasicNavSimulator:
                 # Calculate checksum for the corrupted sentence
                 checksum = self.calculate_nmea_checksum(corrupted_sentence)
                 full_sentence = f"{corrupted_sentence}*{checksum}\r\n"
-                logging.info(
+                logging.warn(
                     f"Sending NMEA with non-printable character at position {insert_pos}"
                 )
         else:
             # Normal case - correct sentence with valid checksum
             checksum = self.calculate_nmea_checksum(sentence)
             full_sentence = f"{sentence}*{checksum}\r\n"
-            logging.info(f"Sending NMEA: {full_sentence.strip()}")
+            logging.debug(f"Sending NMEA: {full_sentence.strip()}")
 
         self.sock.sendto(full_sentence.encode(), (self.udp_host, self.udp_port))
 
@@ -1130,7 +1130,7 @@ class BasicNavSimulator:
 
             # Generate and send all AIS messages
             for message in vessel.generate_messages():
-                logging.info(f"AIS NMEA: {message.strip()}")
+                logging.debug(f"AIS NMEA: {message.strip()}")
                 self.sock.sendto(message.encode(), (self.udp_host, self.udp_port))
 
         self.last_ais_update = current_time
@@ -1441,7 +1441,7 @@ if __name__ == "__main__":
 
     speed_profile = [
         (timedelta(minutes=1), 8.0),
-        (timedelta(minutes=2), 0.1),  # Stall for 2 minutes
+        (timedelta(minutes=4), 0.1),  # Stall for 2 minutes
         (timedelta(minutes=15), 10.0),
         (None, 8.0),
     ]
