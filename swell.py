@@ -525,7 +525,7 @@ class WaveMotionSimulator:
         self.last_awa = awa
         aws_kts = aws / 0.514444
         
-        return self.tws, self.twd, aws_kts, awa
+        return self.tws, self.twd, aws_kts, awaal
 
 if __name__ == "__main__":
     # Create simulator instance

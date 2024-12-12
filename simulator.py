@@ -3,16 +3,19 @@
 import bitstring
 from socket import socket, AF_INET, SOCK_DGRAM
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import datetime, UTC, timedelta
 import logging
 import math
 import random
 import re
 import time
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple, Union, NamedTuple
 
 # Set up logging with timestamp, level, and message
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+
 
 def parse_coordinate(coord: Union[str, float, int]) -> float:
     """
@@ -65,44 +68,47 @@ class AISVessel:
 
     # AIS Navigation Status codes
     NAV_STATUS = {
-        'UNDERWAY_ENGINE': 0,    # Under way using engine
-        'AT_ANCHOR': 1,          # At anchor
-        'NOT_UNDER_COMMAND': 2,  # Not under command
-        'RESTRICTED_MANEUVER': 3,# Restricted maneuverability
-        'CONSTRAINED_DRAFT': 4,  # Constrained by draught
-        'MOORED': 5,            # Moored
-        'AGROUND': 6,           # Aground
-        'FISHING': 7,           # Engaged in fishing
-        'UNDERWAY_SAILING': 8,  # Under way sailing
+        "UNDERWAY_ENGINE": 0,  # Under way using engine
+        "AT_ANCHOR": 1,  # At anchor
+        "NOT_UNDER_COMMAND": 2,  # Not under command
+        "RESTRICTED_MANEUVER": 3,  # Restricted maneuverability
+        "CONSTRAINED_DRAFT": 4,  # Constrained by draught
+        "MOORED": 5,  # Moored
+        "AGROUND": 6,  # Aground
+        "FISHING": 7,  # Engaged in fishing
+        "UNDERWAY_SAILING": 8,  # Under way sailing
     }
     # Ship Types (common ones)
     SHIP_TYPES = {
-        'CARGO': 70,      # Cargo ship
-        'TANKER': 80,     # Tanker
-        'FISHING': 30,    # Fishing vessel
-        'SAILING': 36,    # Sailing vessel
-        'PILOT': 50,      # Pilot vessel
-        'TUG': 52,        # Tug
-        'PASSENGER': 60,  # Passenger ship
-        'FERRY': 61,      # Ferry
-        'DREDGER': 33,    # Dredger
+        "CARGO": 70,  # Cargo ship
+        "TANKER": 80,  # Tanker
+        "FISHING": 30,  # Fishing vessel
+        "SAILING": 36,  # Sailing vessel
+        "PILOT": 50,  # Pilot vessel
+        "TUG": 52,  # Tug
+        "PASSENGER": 60,  # Passenger ship
+        "FERRY": 61,  # Ferry
+        "DREDGER": 33,  # Dredger
     }
-    def __init__(self,
-                 mmsi: int,
-                 vessel_name: str,
-                 position: dict,
-                 ship_type: int = None,
-                 call_sign: str = None,
-                 length: float = None,
-                 beam: float = None,
-                 draft: float = None,
-                 course: float = 0.0,
-                 speed: float = 0.0,
-                 navigation_status: int = 0,
-                 rot: float = 0.0):
+
+    def __init__(
+        self,
+        mmsi: int,
+        vessel_name: str,
+        position: dict,
+        ship_type: int = None,
+        call_sign: str = None,
+        length: float = None,
+        beam: float = None,
+        draft: float = None,
+        course: float = 0.0,
+        speed: float = 0.0,
+        navigation_status: int = 0,
+        rot: float = 0.0,
+    ):
         """
         Initialize an AIS vessel with basic parameters
-        
+
         Args:
             mmsi (int): Maritime Mobile Service Identity (9 digits)
             vessel_name (str): Name of the vessel (max 20 chars)
@@ -122,36 +128,126 @@ class AISVessel:
             raise ValueError("MMSI must be a 9-digit integer")
         self.mmsi = mmsi
         self.vessel_name = vessel_name[:20]
-        
+
         # Optional parameters with defaults based on ship type
-        self.ship_type = ship_type or self.SHIP_TYPES['CARGO']  # Default to cargo ship
-        
+        self.ship_type = ship_type or self.SHIP_TYPES["CARGO"]  # Default to cargo ship
+
         # Set reasonable defaults based on ship type
-        if self.ship_type == self.SHIP_TYPES['SAILING']:
+        if self.ship_type == self.SHIP_TYPES["SAILING"]:
             self.length = length or 15.0  # Default 15m sailing vessel
-            self.beam = beam or 4.0       # Default 4m beam
+            self.beam = beam or 4.0  # Default 4m beam
             self.draft = min(draft or 2.1, 25.5)  # Default 2.1m draft
-        elif self.ship_type == self.SHIP_TYPES['FISHING']:
+        elif self.ship_type == self.SHIP_TYPES["FISHING"]:
             self.length = length or 25.0  # Default 25m fishing vessel
-            self.beam = beam or 8.0       # Default 8m beam
+            self.beam = beam or 8.0  # Default 8m beam
             self.draft = min(draft or 3.5, 25.5)  # Default 3.5m draft
         else:  # Cargo or other large vessels
             self.length = length or 200.0  # Default 200m vessel
-            self.beam = beam or 30.0       # Default 30m beam
+            self.beam = beam or 30.0  # Default 30m beam
             self.draft = min(draft or 12.0, 25.5)  # Default 12m draft
-            
+
         self.call_sign = (call_sign or f"V{self.mmsi % 1000000:06d}")[:7]
         self.course = course
         self.speed = speed
         self.rot = rot
         self.navigation_status = navigation_status
-        
+
         # Parse position
         self.position = {}
         if position:
-            for key in ['lat', 'lon']:
-                if key in position:
-                    self.position[key] = parse_coordinate(position[key])
+            try:
+                self.position = {
+                    "lat": parse_coordinate(position["lat"]),
+                    "lon": parse_coordinate(position["lon"]),
+                }
+            except (KeyError, ValueError) as e:
+                raise ValueError(f"Invalid position format: {position}") from e
+
+    def update_position(self, delta_time: float):
+        """
+        Update vessel position based on course and speed
+
+        Args:
+            delta_time: Time elapsed since last update in seconds
+        """
+        if (
+            not self.position or delta_time <= 0 or delta_time > 60
+        ):  # Cap at 60 seconds max
+            return
+
+        # Convert speed to meters per second
+        speed_ms = self.speed * 0.514444  # 1 knot = 0.514444 m/s
+
+        # Calculate movement in meters
+        heading_rad = math.radians(self.course)
+        dx = speed_ms * math.sin(heading_rad) * delta_time
+        dy = speed_ms * math.cos(heading_rad) * delta_time
+
+        # Convert to coordinate changes
+        R = 6371000.0  # Earth radius in meters
+        lat_rad = math.radians(self.position["lat"])
+
+        # Calculate position changes in degrees
+        dlat = (dy / R) * (180.0 / math.pi)  # More direct conversion to degrees
+        # Adjust longitude change based on latitude to account for meridian convergence
+        dlon = (dx / (R * math.cos(lat_rad))) * (180.0 / math.pi)
+
+        # Log before updating
+        logging.debug(
+            f"Updating position for vessel {self.mmsi}:"
+            f"\n  Speed: {self.speed:.1f} knots"
+            f"\n  Course: {self.course:.1f}°"
+            f"\n  Delta time: {delta_time:.3f} seconds"
+            f"\n  Movement: dx={dx:.2f}m, dy={dy:.2f}m"
+            f"\n  Changes: dlat={dlat:.6f}°, dlon={dlon:.6f}°"
+            f"\n  Current: {self.position['lat']:.6f}°N, {self.position['lon']:.6f}°W"
+            f"\n  New pos: {self.position['lat'] + dlat:.6f}°N, {self.position['lon'] + dlon:.6f}°W"
+        )
+
+        # Update position
+        self.position["lat"] += dlat
+        self.position["lon"] += dlon
+
+        # Normalize coordinates
+        self.position["lat"] = max(-90, min(90, self.position["lat"]))
+        self.position["lon"] = ((self.position["lon"] + 180) % 360) - 180
+
+    def update_navigation_status(self):
+        """Update navigation status based on vessel state"""
+        # Example logic for automatic status updates
+        if self.speed < 0.1:  # Almost stationary
+            if self.navigation_status not in [
+                self.NAV_STATUS["AT_ANCHOR"],
+                self.NAV_STATUS["MOORED"],
+                self.NAV_STATUS["AGROUND"],
+            ]:
+                self.navigation_status = self.NAV_STATUS["AT_ANCHOR"]
+        elif self.speed > 0.1:  # Moving
+            if self.ship_type == self.SHIP_TYPES["SAILING"]:
+                self.navigation_status = self.NAV_STATUS["UNDERWAY_SAILING"]
+            else:
+                self.navigation_status = self.NAV_STATUS["UNDERWAY_ENGINE"]
+
+    def generate_messages(self) -> List[str]:
+        """
+        Generate all AIS messages for this vessel
+
+        Returns:
+            List of NMEA formatted AIS messages
+        """
+        messages = []
+
+        # Generate position report
+        pos_report = self.generate_position_report()
+        if pos_report:
+            messages.append(pos_report)
+
+        # Generate static data less frequently (every 6 minutes in real AIS)
+        static_data = self.generate_static_data()
+        if static_data:
+            messages.append(static_data)
+
+        return messages
 
     def encode_rate_of_turn(self):
         """
@@ -163,16 +259,16 @@ class AISVessel:
             return 0
         elif self.rot is None:
             return -128  # Not available
-        
+
         # Convert ROT to AIS ROT indicator
         ais_rot = 4.733 * math.sqrt(abs(self.rot))
         ais_rot = round(ais_rot)
-        
+
         # Cap at 126 (708° per minute), negative values indicate port turn
         ais_rot = min(126, ais_rot)
         if self.rot < 0:
             ais_rot = -ais_rot
-            
+
         return ais_rot
 
     def encode_position_report(self):
@@ -182,76 +278,88 @@ class AISVessel:
         """
         # Create a BitArray to hold the message
         bits = bitstring.BitArray()
-        
+
         # Message Type (6 bits) - Position Report is type 1
-        bits.append(bitstring.pack('uint:6', 1))
-        
+        bits.append(bitstring.pack("uint:6", 1))
+
         # Repeat Indicator (2 bits)
-        bits.append(bitstring.pack('uint:2', 0))
-        
+        bits.append(bitstring.pack("uint:2", 0))
+
         # MMSI (30 bits)
-        bits.append(bitstring.pack('uint:30', self.mmsi))
-        
+        bits.append(bitstring.pack("uint:30", self.mmsi))
+
         # Navigation Status (4 bits)
-        bits.append(bitstring.pack('uint:4', self.navigation_status))
-        
+        bits.append(bitstring.pack("uint:4", self.navigation_status))
+
         # Rate of Turn (8 bits)
-        bits.append(bitstring.pack('int:8', self.encode_rate_of_turn()))
-        
+        bits.append(bitstring.pack("int:8", self.encode_rate_of_turn()))
+
         # Speed Over Ground (10 bits) - in 0.1 knot steps
         speed_int = int(self.speed * 10)
-        bits.append(bitstring.pack('uint:10', min(speed_int, 1023)))
-        
+        bits.append(bitstring.pack("uint:10", min(speed_int, 1023)))
+
         # Position Accuracy (1 bit) - 0 = low, 1 = high
-        bits.append(bitstring.pack('uint:1', 0))
-        
+        bits.append(bitstring.pack("uint:1", 0))
+
+        # Convert coordinates to AIS format (in 1/10000 minute)
+        # Ensure longitude is within valid range (-180 to 180)
+        lon = ((self.position["lon"] + 180) % 360) - 180
+        # Convert to AIS format
+        lon_ais = int(lon * 600000)
+        # Clamp to valid range for 28-bit signed integer
+        lon_ais = max(-134217728, min(134217727, lon_ais))
+
+        # Same for latitude (-90 to 90)
+        lat = max(-90, min(90, self.position["lat"]))
+        lat_ais = int(lat * 600000)
+        # Clamp to valid range for 27-bit signed integer
+        lat_ais = max(-67108864, min(67108863, lat_ais))
+
         # Longitude (28 bits) - in 1/10000 minute
-        lon = int(self.position['lon'] * 600000)
-        bits.append(bitstring.pack('int:28', lon))
-        
+        bits.append(bitstring.pack("int:28", lon_ais))
+
         # Latitude (27 bits) - in 1/10000 minute
-        lat = int(self.position['lat'] * 600000)
-        bits.append(bitstring.pack('int:27', lat))
-        
+        bits.append(bitstring.pack("int:27", lat_ais))
+
         # Course Over Ground (12 bits) - in 0.1 degree steps
         cog = int(self.course * 10)
-        bits.append(bitstring.pack('uint:12', cog))
-        
+        bits.append(bitstring.pack("uint:12", cog))
+
         # True Heading (9 bits) - use COG if not available
-        bits.append(bitstring.pack('uint:9', int(self.course)))
-        
+        bits.append(bitstring.pack("uint:9", int(self.course)))
+
         # Time Stamp (6 bits) - seconds of UTC timestamp
         timestamp = datetime.now(UTC).second
-        bits.append(bitstring.pack('uint:6', timestamp))
-        
+        bits.append(bitstring.pack("uint:6", timestamp))
+
         # Reserved (4 bits)
-        bits.append(bitstring.pack('uint:4', 0))
-        
+        bits.append(bitstring.pack("uint:4", 0))
+
         # Return the binary data encoded in 6-bit ASCII format
         return self._encode_payload(bits)
-    
+
     def encode_static_data(self):
         """
         Encode Static and Voyage Related Data (Message Type 5)
         Uses 6-bit ASCII encoding as per ITU-R M.1371
         """
         bits = bitstring.BitArray()
-        
+
         # Message Type (6 bits) - Type 5
-        bits.append(bitstring.pack('uint:6', 5))
-        
+        bits.append(bitstring.pack("uint:6", 5))
+
         # Repeat Indicator (2 bits)
-        bits.append(bitstring.pack('uint:2', 0))
-        
+        bits.append(bitstring.pack("uint:2", 0))
+
         # MMSI (30 bits)
-        bits.append(bitstring.pack('uint:30', self.mmsi))
-        
+        bits.append(bitstring.pack("uint:30", self.mmsi))
+
         # AIS Version (2 bits)
-        bits.append(bitstring.pack('uint:2', 0))
-        
+        bits.append(bitstring.pack("uint:2", 0))
+
         # IMO Number (30 bits) - Using 0 for this example
-        bits.append(bitstring.pack('uint:30', 0))
-        
+        bits.append(bitstring.pack("uint:30", 0))
+
         # Call Sign (42 bits) - 7 six-bit characters
         call_sign_padded = self.call_sign.ljust(7)
         for char in call_sign_padded:
@@ -262,8 +370,8 @@ class AISVessel:
                 sixbit = ord(char)
             else:  # Below space
                 sixbit = 32  # Default to space
-            bits.append(bitstring.pack('uint:6', sixbit))
-        
+            bits.append(bitstring.pack("uint:6", sixbit))
+
         # Vessel Name (120 bits) - 20 six-bit characters
         name_padded = self.vessel_name.ljust(20)
         for char in name_padded:
@@ -274,38 +382,38 @@ class AISVessel:
                 sixbit = ord(char)
             else:  # Below space
                 sixbit = 32  # Default to space
-            bits.append(bitstring.pack('uint:6', sixbit))
-        
+            bits.append(bitstring.pack("uint:6", sixbit))
+
         # Ship Type (8 bits)
-        bits.append(bitstring.pack('uint:8', self.ship_type))
-        
+        bits.append(bitstring.pack("uint:8", self.ship_type))
+
         # Dimension to Bow (9 bits)
-        bits.append(bitstring.pack('uint:9', int(self.length/2)))
-        
+        bits.append(bitstring.pack("uint:9", int(self.length / 2)))
+
         # Dimension to Stern (9 bits)
-        bits.append(bitstring.pack('uint:9', int(self.length/2)))
-        
+        bits.append(bitstring.pack("uint:9", int(self.length / 2)))
+
         # Dimension to Port (6 bits)
-        bits.append(bitstring.pack('uint:6', int(self.beam/2)))
-        
+        bits.append(bitstring.pack("uint:6", int(self.beam / 2)))
+
         # Dimension to Starboard (6 bits)
-        bits.append(bitstring.pack('uint:6', int(self.beam/2)))
-        
+        bits.append(bitstring.pack("uint:6", int(self.beam / 2)))
+
         # Draft (8 bits) - in 0.1 meter steps
         draft_dm = int(self.draft * 10)
-        bits.append(bitstring.pack('uint:8', draft_dm))
-        
+        bits.append(bitstring.pack("uint:8", draft_dm))
+
         # Destination (120 bits) - 20 six-bit characters
         destination = "".ljust(20)
         for char in destination:
-            bits.append(bitstring.pack('uint:6', 32))  # Space
-        
+            bits.append(bitstring.pack("uint:6", 32))  # Space
+
         # DTE (1 bit)
-        bits.append(bitstring.pack('uint:1', 0))
-        
+        bits.append(bitstring.pack("uint:1", 0))
+
         # Spare (1 bit)
-        bits.append(bitstring.pack('uint:1', 0))
-        
+        bits.append(bitstring.pack("uint:1", 0))
+
         return self._encode_payload(bits)
 
     def _encode_payload(self, bits):
@@ -314,28 +422,28 @@ class AISVessel:
         """
         # Pad to multiple of 6 bits
         while len(bits) % 6:
-            bits.append('0b0')
-            
+            bits.append("0b0")
+
         # Convert 6-bit groups to ASCII characters
-        payload = ''
+        payload = ""
         for i in range(0, len(bits), 6):
-            sixbits = bits[i:i+6].uint
+            sixbits = bits[i : i + 6].uint
             if sixbits < 40:
                 payload += chr(sixbits + 48)
             else:
                 payload += chr(sixbits + 56)
-                
+
         return payload
-    
+
     def generate_position_report(self):
         """
         Generate complete NMEA AIVDM sentence
         """
-        payload = self.encode_position_report()            
+        payload = self.encode_position_report()
         # AIVDM,1,1,,A,payload,0
         checksum = self._calculate_checksum(f"AIVDM,1,1,,A,{payload},0")
         return f"!AIVDM,1,1,,A,{payload},0*{checksum}"
-    
+
     def generate_static_data(self):
         """
         Generate complete NMEA AIVDM sentence
@@ -352,7 +460,15 @@ class AISVessel:
         checksum = 0
         for char in data:
             checksum ^= ord(char)
-        return format(checksum, '02X')
+        return format(checksum, "02X")
+
+
+class SpeedSegment(NamedTuple):
+    """Represents a speed segment with duration and target speed"""
+
+    duration: Optional[timedelta]
+    speed: float
+
 
 class BasicNavSimulator:
     def __init__(self, udp_host="127.0.0.1", udp_port=10110):
@@ -362,7 +478,13 @@ class BasicNavSimulator:
 
         # Vessel state
         self.position = {"lat": 0, "lon": 0}
-        self.sog = 8  # Speed over ground in knots
+
+        # Modified speed handling
+        self._speed_profile: List[SpeedSegment] = []
+        self._current_speed_segment = 0
+        self._segment_start_time = None
+        self.sog = None  # Speed over ground in knots, configured from speed profile.
+
         self.cog = 0  # Course Over Ground in degrees true
         self.heading = 0  # Heading in degrees true
         self.variation = -15.0  # Magnetic variation (East negative)
@@ -430,6 +552,63 @@ class BasicNavSimulator:
         # Return two-character hex string
         return f"{checksum:02X}"
 
+    def set_speed_profile(self, profile: List[Tuple[Union[timedelta, None], float]]):
+        """
+        Set the speed profile for the vessel.
+
+        Args:
+            profile: List of tuples (duration, speed)
+                    duration: timedelta or None (None means infinite duration)
+                    speed: Target speed in knots
+        """
+        # Convert profile to SpeedSegments
+        self._speed_profile = [SpeedSegment(duration=d, speed=s) for d, s in profile]
+        self._current_speed_segment = 0
+        self._segment_start_time = None
+
+        # Set initial speed
+        if self._speed_profile:
+            self.sog = self._speed_profile[0].speed
+
+        logging.info(f"Speed profile set with {len(self._speed_profile)} segments")
+
+    def update_speed_from_profile(self, current_time: float):
+        """
+        Update vessel speed based on the current profile segment
+
+        Args:
+            current_time: Current simulation time in seconds
+        """
+        if not self._speed_profile or self._current_speed_segment >= len(
+            self._speed_profile
+        ):
+            return
+
+        # Initialize segment start time if needed
+        if self._segment_start_time is None:
+            self._segment_start_time = current_time
+            self.sog = self._speed_profile[self._current_speed_segment].speed
+            logging.info(
+                f"Starting speed segment {self._current_speed_segment}: {self.sog} knots"
+            )
+            return
+
+        current_segment = self._speed_profile[self._current_speed_segment]
+        elapsed_time = current_time - self._segment_start_time
+
+        # Check if we need to move to the next segment
+        if current_segment.duration is not None:
+            if elapsed_time >= current_segment.duration.total_seconds():
+                self._current_speed_segment += 1
+                self._segment_start_time = current_time
+
+                # Update speed if there's a next segment
+                if self._current_speed_segment < len(self._speed_profile):
+                    self.sog = self._speed_profile[self._current_speed_segment].speed
+                    logging.info(
+                        f"Changing to speed segment {self._current_speed_segment}: {self.sog} knots"
+                    )
+
     def send_nmea(self, sentence):
         """
         Send NMEA sentence with random corruption (10% chance)
@@ -439,35 +618,41 @@ class BasicNavSimulator:
         """
         if not sentence.startswith("$"):
             sentence = "$" + sentence
-            
+
         # chance of corruption
         should_corrupt = random.random() < 0.0
-        
+
         if should_corrupt:
-            corruption_type = random.choice(['checksum', 'non_printable'])
-            
-            if corruption_type == 'checksum':
+            corruption_type = random.choice(["checksum", "non_printable"])
+
+            if corruption_type == "checksum":
                 # Calculate correct checksum
                 checksum = self.calculate_nmea_checksum(sentence)
                 # Generate an incorrect checksum by adding 1 to the correct one
                 wrong_checksum = f"{(int(checksum, 16) + 1) % 256:02X}"
                 full_sentence = f"{sentence}*{wrong_checksum}\r\n"
-                logging.info(f"Sending NMEA with corrupted checksum: {full_sentence.strip()}")
-                
+                logging.info(
+                    f"Sending NMEA with corrupted checksum: {full_sentence.strip()}"
+                )
+
             else:  # non_printable
                 # Insert a random non-printable character (ASCII 1-31)
                 non_printable = chr(random.randint(1, 31))
                 # Insert at random position after $ but before any potential *
-                asterisk_pos = sentence.find('*')
+                asterisk_pos = sentence.find("*")
                 if asterisk_pos == -1:
                     asterisk_pos = len(sentence)
                 insert_pos = random.randint(1, asterisk_pos - 1)
-                corrupted_sentence = sentence[:insert_pos] + non_printable + sentence[insert_pos:]
-                
+                corrupted_sentence = (
+                    sentence[:insert_pos] + non_printable + sentence[insert_pos:]
+                )
+
                 # Calculate checksum for the corrupted sentence
                 checksum = self.calculate_nmea_checksum(corrupted_sentence)
                 full_sentence = f"{corrupted_sentence}*{checksum}\r\n"
-                logging.info(f"Sending NMEA with non-printable character at position {insert_pos}")
+                logging.info(
+                    f"Sending NMEA with non-printable character at position {insert_pos}"
+                )
         else:
             # Normal case - correct sentence with valid checksum
             checksum = self.calculate_nmea_checksum(sentence)
@@ -923,43 +1108,31 @@ class BasicNavSimulator:
     def update_ais_vessels(self, delta_time: float):
         """Update AIS vessel positions and send messages"""
         current_time = time.time()
-        
+
+        # Initialize last_ais_update if it's 0
+        if self.last_ais_update == 0:
+            self.last_ais_update = current_time
+            return
+
         # Only update AIS data at specified interval
         if current_time - self.last_ais_update < self.ais_update_interval:
             return
-            
-        for vessel in self.ais_vessels:
-            # Update vessel position based on course and speed
-            if vessel.position:
-                # Convert speed to meters per second
-                speed_ms = vessel.speed * 0.514444
-                
-                # Calculate movement
-                heading_rad = math.radians(vessel.course)
-                dx = speed_ms * math.sin(heading_rad) * delta_time
-                dy = speed_ms * math.cos(heading_rad) * delta_time
-                
-                # Convert to coordinate changes
-                R = 6371000  # Earth radius in meters
-                lat_rad = math.radians(vessel.position['lat'])
-                
-                dlat = math.degrees(dy / R)
-                dlon = math.degrees(dx / (R * math.cos(lat_rad)))
-                
-                # Update position
-                vessel.position['lat'] += dlat
-                vessel.position['lon'] += dlon
-                
-                # Send position report
-                pos_report = vessel.generate_position_report()
-                logging.info(f"Sending NMEA: {pos_report.strip()}")
-                self.sock.sendto(pos_report.encode(), (self.udp_host, self.udp_port))
 
-                # Send static data
-                static_data = vessel.generate_static_data()
-                logging.info(f"Sending NMEA: {static_data.strip()}")
-                self.sock.sendto(static_data.encode(), (self.udp_host, self.udp_port))
-        
+        # Calculate actual time elapsed since last update
+        actual_delta_time = current_time - self.last_ais_update
+
+        for vessel in self.ais_vessels:
+            # Update vessel position using actual elapsed time
+            vessel.update_position(actual_delta_time)
+
+            # Update vessel status
+            vessel.update_navigation_status()
+
+            # Generate and send all AIS messages
+            for message in vessel.generate_messages():
+                logging.info(f"AIS NMEA: {message.strip()}")
+                self.sock.sendto(message.encode(), (self.udp_host, self.udp_port))
+
         self.last_ais_update = current_time
 
     def calculate_apparent_wind(self):
@@ -1152,6 +1325,7 @@ class BasicNavSimulator:
     def simulate(
         self,
         waypoints: List[Dict[str, Union[str, float]]],
+        speed_profile: List[Tuple[Union[timedelta, None], float]],
         duration_seconds: Optional[float] = None,
         update_rate: float = 1,
         wind_direction: float = 0.0,  # Direction wind is coming FROM in degrees true
@@ -1161,6 +1335,8 @@ class BasicNavSimulator:
         """Run the simulation with waypoints"""
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
+
+        self.set_speed_profile(speed_profile)
 
         # Initialize AIS vessels if provided
         self.ais_vessels = ais_vessels or []
@@ -1201,6 +1377,9 @@ class BasicNavSimulator:
                     break
 
                 delta_time = current_time - last_update
+
+                # Update speed based on profile
+                self.update_speed_from_profile(current_time - start_time)
 
                 # Update AIS vessels
                 self.update_ais_vessels(delta_time)
@@ -1260,88 +1439,96 @@ if __name__ == "__main__":
         {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
     ]
 
+    speed_profile = [
+        (timedelta(minutes=1), 8.0),
+        (timedelta(minutes=2), 0.1),  # Stall for 2 minutes
+        (timedelta(minutes=15), 10.0),
+        (None, 8.0),
+    ]
+
     # Create some example AIS vessels
     ais_vessels = [
         AISVessel(
             mmsi=366123456,
             vessel_name="BAY TRADER",
-            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            ship_type=AISVessel.SHIP_TYPES["CARGO"],
             position={"lat": "37° 40.3575' N", "lon": "122° 22.1460' W"},
-            navigation_status=AISVessel.NAV_STATUS['UNDERWAY_ENGINE'],
+            navigation_status=AISVessel.NAV_STATUS["UNDERWAY_ENGINE"],
             speed=12.0,
-            course=270.0,
+            course=50.0,
         ),
         AISVessel(
             mmsi=366123457,
             vessel_name="ANCHOR QUEEN",
-            ship_type=AISVessel.SHIP_TYPES['TANKER'],
+            ship_type=AISVessel.SHIP_TYPES["TANKER"],
             position={"lat": "37° 40.4575' N", "lon": "122° 22.2460' W"},
-            navigation_status=AISVessel.NAV_STATUS['AT_ANCHOR'],
+            navigation_status=AISVessel.NAV_STATUS["AT_ANCHOR"],
             speed=0.0,
         ),
         AISVessel(
             mmsi=366123458,
             vessel_name="DISABLED LADY",
-            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            ship_type=AISVessel.SHIP_TYPES["CARGO"],
             position={"lat": "37° 40.5575' N", "lon": "122° 22.3460' W"},
-            navigation_status=AISVessel.NAV_STATUS['NOT_UNDER_COMMAND'],
+            navigation_status=AISVessel.NAV_STATUS["NOT_UNDER_COMMAND"],
             speed=0.1,
         ),
         AISVessel(
             mmsi=366123459,
             vessel_name="DREDGER ONE",
-            ship_type=AISVessel.SHIP_TYPES['DREDGER'],
+            ship_type=AISVessel.SHIP_TYPES["DREDGER"],
             position={"lat": "37° 40.6575' N", "lon": "122° 22.4460' W"},
-            navigation_status=AISVessel.NAV_STATUS['RESTRICTED_MANEUVER'],
+            navigation_status=AISVessel.NAV_STATUS["RESTRICTED_MANEUVER"],
             speed=3.0,
         ),
         AISVessel(
             mmsi=366123460,
             vessel_name="DEEP DRAFT",
-            ship_type=AISVessel.SHIP_TYPES['TANKER'],
+            ship_type=AISVessel.SHIP_TYPES["TANKER"],
             draft=15.5,
             position={"lat": "37° 40.7575' N", "lon": "122° 22.5460' W"},
-            navigation_status=AISVessel.NAV_STATUS['CONSTRAINED_DRAFT'],
+            navigation_status=AISVessel.NAV_STATUS["CONSTRAINED_DRAFT"],
             speed=15.0,
         ),
         AISVessel(
             mmsi=366123461,
             vessel_name="PIER SIDE",
-            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            ship_type=AISVessel.SHIP_TYPES["CARGO"],
             position={"lat": "37° 40.8575' N", "lon": "122° 22.6460' W"},
-            navigation_status=AISVessel.NAV_STATUS['MOORED'],
+            navigation_status=AISVessel.NAV_STATUS["MOORED"],
             speed=0.0,
         ),
         AISVessel(
             mmsi=366123462,
             vessel_name="ON THE ROCKS",
-            ship_type=AISVessel.SHIP_TYPES['CARGO'],
+            ship_type=AISVessel.SHIP_TYPES["CARGO"],
             position={"lat": "37° 40.9575' N", "lon": "122° 22.7460' W"},
-            navigation_status=AISVessel.NAV_STATUS['AGROUND'],
-            speed=15.0,
-            course=50.0,
+            navigation_status=AISVessel.NAV_STATUS["AGROUND"],
+            speed=0.0,
         ),
         AISVessel(
             mmsi=366123463,
             vessel_name="FISHING MASTER",
-            ship_type=AISVessel.SHIP_TYPES['FISHING'],
+            ship_type=AISVessel.SHIP_TYPES["FISHING"],
             position={"lat": "37° 41.0575' N", "lon": "122° 22.8460' W"},
-            navigation_status=AISVessel.NAV_STATUS['FISHING'],
-            speed=4.5,
+            navigation_status=AISVessel.NAV_STATUS["FISHING"],
+            speed=8.0,
+            course=80.0,
         ),
         AISVessel(
             mmsi=366123464,
             vessel_name="WIND WALKER",
-            ship_type=AISVessel.SHIP_TYPES['SAILING'],
+            ship_type=AISVessel.SHIP_TYPES["SAILING"],
             position={"lat": "37° 40.3775' N", "lon": "122° 22.1460' W"},
-            navigation_status=AISVessel.NAV_STATUS['UNDERWAY_SAILING'],
+            navigation_status=AISVessel.NAV_STATUS["UNDERWAY_SAILING"],
             speed=6.0,
-        )
+        ),
     ]
 
     logging.info("Starting simulation...")
     simulator.simulate(
         waypoints=waypoints,
+        speed_profile=speed_profile,
         duration_seconds=None,
         update_rate=1,  # Update every second
         wind_direction=270,  # Wind coming from the west
