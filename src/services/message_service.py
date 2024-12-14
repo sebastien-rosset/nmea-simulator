@@ -1,11 +1,14 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM
 import logging
 import random
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 from src.models.route import Position, RouteManager
+from .nmea2000 import NMEA2000Formatter, NMEA2000Message
 from src.utils.coordinate_utils import calculate_bearing, calculate_cross_track_error, calculate_distance
 from src.utils.navigation_utils import calculate_vmg
 
@@ -14,65 +17,69 @@ class WindData:
     apparent_speed: float  # knots
     apparent_angle: float  # degrees relative to bow (-180 to +180)
 
+class NMEAVersion(Enum):
+    """NMEA protocol version"""
+    NMEA_0183 = "0183"
+    NMEA_2000 = "2000"
+
+class NMEA0183Formatter:
+    """Formats messages according to NMEA 0183 standard"""
+    
+    def format_message(self, message: str) -> str:
+        """Format NMEA 0183 message with checksum"""
+        if not message.startswith("$"):
+            message = "$" + message
+            
+        checksum = self.calculate_checksum(message)
+        return f"{message}*{checksum}\r\n"
+    
+    def calculate_checksum(self, sentence: str) -> str:
+        """Calculate NMEA 0183 checksum"""
+        start = 1
+        end = sentence.find("*")
+        if end == -1:
+            end = len(sentence)
+            
+        checksum = 0
+        for char in sentence[start:end]:
+            checksum ^= ord(char)
+            
+        return f"{checksum:02X}"
+
 class MessageService:
     """Handles NMEA message formatting and sending"""
     
-    def __init__(self, udp_host="127.0.0.1", udp_port=10110):
+    def __init__(self, 
+                 host: str = "127.0.0.1", 
+                 port: int = 10110, 
+                 version: NMEAVersion = NMEAVersion.NMEA_0183):
         self.sock = socket(AF_INET, SOCK_DGRAM)
-        self.udp_host = udp_host
-        self.udp_port = udp_port
+        self.host = host
+        self.port = port
+        self.version = version
+        self.formatter = (NMEA0183Formatter() if version == NMEAVersion.NMEA_0183 
+                         else NMEA2000Formatter())
 
-    def send_nmea(self, sentence):
+    def send_nmea(self, message: Union[str, NMEA2000Message]):
         """
-        Send NMEA sentence with random corruption (10% chance)
-        Types of corruption:
-        1. Wrong checksum
-        2. Non-printable characters (with correct checksum)
+        Send NMEA message in appropriate format.
+        
+        Args:
+            message: NMEA message to send (string for 0183, NMEA2000Message for 2000)
         """
-        if not sentence.startswith("$"):
-            sentence = "$" + sentence
-
-        # chance of corruption
-        should_corrupt = random.random() < 0.0
-
-        if should_corrupt:
-            corruption_type = random.choice(["checksum", "non_printable"])
-
-            if corruption_type == "checksum":
-                # Calculate correct checksum
-                checksum = self.calculate_nmea_checksum(sentence)
-                # Generate an incorrect checksum by adding 1 to the correct one
-                wrong_checksum = f"{(int(checksum, 16) + 1) % 256:02X}"
-                full_sentence = f"{sentence}*{wrong_checksum}\r\n"
-                logging.warn(
-                    f"Sending NMEA with corrupted checksum: {full_sentence.strip()}"
-                )
-
-            else:  # non_printable
-                # Insert a random non-printable character (ASCII 1-31)
-                non_printable = chr(random.randint(1, 31))
-                # Insert at random position after $ but before any potential *
-                asterisk_pos = sentence.find("*")
-                if asterisk_pos == -1:
-                    asterisk_pos = len(sentence)
-                insert_pos = random.randint(1, asterisk_pos - 1)
-                corrupted_sentence = (
-                    sentence[:insert_pos] + non_printable + sentence[insert_pos:]
-                )
-
-                # Calculate checksum for the corrupted sentence
-                checksum = self.calculate_nmea_checksum(corrupted_sentence)
-                full_sentence = f"{corrupted_sentence}*{checksum}\r\n"
-                logging.warn(
-                    f"Sending NMEA with non-printable character at position {insert_pos}"
-                )
-        else:
-            # Normal case - correct sentence with valid checksum
-            checksum = self.calculate_nmea_checksum(sentence)
-            full_sentence = f"{sentence}*{checksum}\r\n"
-            logging.debug(f"Sending NMEA: {full_sentence.strip()}")
-
-        self.sock.sendto(full_sentence.encode(), (self.udp_host, self.udp_port))
+        try:
+            formatted_message = self.formatter.format_message(message)
+            if isinstance(formatted_message, str):
+                data = formatted_message.encode()
+            else:
+                data = formatted_message
+                
+            self.sock.sendto(data, (self.host, self.port))
+            logging.debug(f"Sent NMEA {self.version.value}: {formatted_message}")
+            
+        except Exception as e:
+            logging.error(f"Error sending NMEA message: {e}")
+            raise
 
     def send_wind_messages(self, true_wind_speed: float, true_wind_direction: float,
                           wind_data: WindData, heading: float, variation: float):
