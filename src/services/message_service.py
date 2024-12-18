@@ -83,13 +83,27 @@ class MessageService:
         """
         try:
             formatted_message = self.formatter.format_message(message)
-            if isinstance(formatted_message, str):
-                data = formatted_message.encode()
-            else:
+
+            # Handle NMEA 0183 string messages being converted to 2000
+            if isinstance(message, str):
+                data = formatted_message  # Already in bytes for 2000
+                if self.version == NMEAVersion.NMEA_2000:
+                    # Show original NMEA 0183 message and what it's being converted to
+                    log_message = f"Converting {message.strip()} -> Raw bytes: {formatted_message.hex()}"
+                else:
+                    # Regular NMEA 0183 message
+                    data = formatted_message.encode()
+                    log_message = formatted_message.strip()
+
+            # Handle native NMEA 2000 messages
+            elif isinstance(message, NMEA2000Message):
                 data = formatted_message
+                log_message = f"[{message.pgn}] {message.get_description()} - {message.get_readable_fields()}"
+            else:
+                raise ValueError(f"Unsupported message type: {type(message)}")
 
             self.sock.sendto(data, (self.host, self.port))
-            logging.debug(f"Sent NMEA {self.version.value}: {formatted_message}")
+            logging.debug(f"Sent NMEA {self.version.value}: {log_message}")
 
         except Exception as e:
             logging.error(f"Error sending NMEA message: {e}")

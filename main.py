@@ -8,6 +8,23 @@ from src.simulator import BasicNavSimulator
 from src.models.ais_vessel import AISVessel
 
 
+def parse_log_level(level_str):
+    """Convert string log level to logging constant."""
+    level_str = level_str.upper()
+    levels = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    if level_str not in levels:
+        raise ValueError(
+            f"Invalid log level: {level_str}. Must be one of {', '.join(levels.keys())}"
+        )
+    return levels[level_str]
+
+
 def main():
     """Run the NMEA simulator with example configuration"""
 
@@ -24,12 +41,19 @@ def main():
     parser.add_argument(
         "--port", type=int, default=10110, help="Port number for UDP messages"
     )
+    parser.add_argument(
+        "--loglevel",
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level",
+    )
 
     args = parser.parse_args()
 
     # Set up logging
     logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+        level=parse_log_level(args.loglevel),
+        format="%(asctime)s - %(levelname)s - %(message)s",
     )
 
     # Create simulator instance
