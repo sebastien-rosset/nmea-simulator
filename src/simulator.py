@@ -1,7 +1,7 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from src.utils.navigation_utils import calculate_water_speed, update_vessel_position
 from src.utils.vessel_dynamics import RudderState
@@ -11,7 +11,7 @@ from .models.ais_manager import AISManager, AISVessel
 from .models.environment import EnvironmentManager
 from .models.route import RouteManager, Position
 from .models.speed_profile import SpeedManager
-from .services.message_service import MessageService
+from .services.message_service import MessageService, NMEAVersion
 from .utils.coordinate_utils import parse_coordinate
 
 
@@ -21,16 +21,26 @@ class BasicNavSimulator:
     Coordinates various subsystems to simulate vessel movement and conditions.
     """
 
-    def __init__(self, host="127.0.0.1", port=10110):
+    def __init__(
+        self,
+        host="127.0.0.1",
+        port=10110,
+        protocol: Literal["0183", "2000"] = "0183",
+    ):
         """
         Initialize simulator with network settings and subsystems.
 
         Args:
             host: Host address for UDP messages
             port: Port number for UDP messages
+            protocol: NMEA protocol version ("0183" or "2000")
         """
+
+        nmea_version = (
+            NMEAVersion.NMEA_0183 if protocol == "0183" else NMEAVersion.NMEA_2000
+        )
         # Initialize managers and services
-        self.message_service = MessageService(host, port)
+        self.message_service = MessageService(host, port, version=nmea_version)
         self.route_manager = RouteManager()
         self.speed_manager = SpeedManager()
         self.environment_manager = EnvironmentManager()

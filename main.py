@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import logging
 from datetime import timedelta
 
@@ -10,13 +11,33 @@ from src.models.ais_vessel import AISVessel
 def main():
     """Run the NMEA simulator with example configuration"""
 
+    parser = argparse.ArgumentParser(description="NMEA Navigation Simulator")
+    parser.add_argument(
+        "--protocol",
+        choices=["0183", "2000"],
+        default="0183",
+        help="NMEA protocol version",
+    )
+    parser.add_argument(
+        "--host", default="127.0.0.1", help="Host address for UDP messages"
+    )
+    parser.add_argument(
+        "--port", type=int, default=10110, help="Port number for UDP messages"
+    )
+
+    args = parser.parse_args()
+
     # Set up logging
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
     # Create simulator instance
-    simulator = BasicNavSimulator()
+    simulator = BasicNavSimulator(
+        host=args.host,
+        port=args.port,
+        protocol=args.protocol,
+    )
 
     # Example waypoints for a route in San Francisco Bay
     waypoints = [
