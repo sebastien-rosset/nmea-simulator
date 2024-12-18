@@ -2,6 +2,7 @@ import math
 import re
 from typing import Tuple, Union
 
+
 def parse_coordinate(coord: Union[str, float, int]) -> float:
     """
     Parse coordinate string in various formats or return numeric value.
@@ -46,10 +47,9 @@ def parse_coordinate(coord: Union[str, float, int]) -> float:
 
     except (ValueError, AttributeError) as e:
         raise ValueError(f"Unable to parse coordinate: {coord}") from e
-    
-def calculate_distance(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
+
+
+def calculate_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate distance between two points in nautical miles"""
     R = 3440.065  # Earth's radius in nautical miles
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
@@ -62,26 +62,31 @@ def calculate_distance(
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
     return R * c
 
-def calculate_bearing(
-    lat1: float, lon1: float, lat2: float, lon2: float
-) -> float:
+
+def calculate_bearing(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate true bearing between two points"""
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
     dlon = lon2 - lon1
     y = math.sin(dlon) * math.cos(lat2)
-    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(
-        lat2
-    ) * math.cos(dlon)
+    x = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(
+        dlon
+    )
     bearing = math.degrees(math.atan2(y, x))
     return (bearing + 360) % 360
 
-def calculate_cross_track_error(current_lat: float, current_lon: float, 
-                              start_lat: float, start_lon: float,
-                              end_lat: float, end_lon: float) -> Tuple[float, str]:
+
+def calculate_cross_track_error(
+    current_lat: float,
+    current_lon: float,
+    start_lat: float,
+    start_lon: float,
+    end_lat: float,
+    end_lon: float,
+) -> Tuple[float, str]:
     """
     Calculate cross track error between current position and route leg.
     Assumes valid input coordinates - validation should be done before calling.
-    
+
     Args:
         current_lat: Current position latitude in decimal degrees
         current_lon: Current position longitude in decimal degrees

@@ -9,61 +9,75 @@ from typing import Dict, Optional, Union
 
 from src.models.route import Position, RouteManager
 from .nmea2000 import NMEA2000Formatter, NMEA2000Message
-from src.utils.coordinate_utils import calculate_bearing, calculate_cross_track_error, calculate_distance
+from src.utils.coordinate_utils import (
+    calculate_bearing,
+    calculate_cross_track_error,
+    calculate_distance,
+)
 from src.utils.navigation_utils import calculate_vmg
+
 
 @dataclass
 class WindData:
     apparent_speed: float  # knots
     apparent_angle: float  # degrees relative to bow (-180 to +180)
 
+
 class NMEAVersion(Enum):
     """NMEA protocol version"""
+
     NMEA_0183 = "0183"
     NMEA_2000 = "2000"
 
+
 class NMEA0183Formatter:
     """Formats messages according to NMEA 0183 standard"""
-    
+
     def format_message(self, message: str) -> str:
         """Format NMEA 0183 message with checksum"""
         if not message.startswith("$"):
             message = "$" + message
-            
+
         checksum = self.calculate_checksum(message)
         return f"{message}*{checksum}\r\n"
-    
+
     def calculate_checksum(self, sentence: str) -> str:
         """Calculate NMEA 0183 checksum"""
         start = 1
         end = sentence.find("*")
         if end == -1:
             end = len(sentence)
-            
+
         checksum = 0
         for char in sentence[start:end]:
             checksum ^= ord(char)
-            
+
         return f"{checksum:02X}"
+
 
 class MessageService:
     """Handles NMEA message formatting and sending"""
-    
-    def __init__(self, 
-                 host: str = "127.0.0.1", 
-                 port: int = 10110, 
-                 version: NMEAVersion = NMEAVersion.NMEA_0183):
+
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 10110,
+        version: NMEAVersion = NMEAVersion.NMEA_0183,
+    ):
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.host = host
         self.port = port
         self.version = version
-        self.formatter = (NMEA0183Formatter() if version == NMEAVersion.NMEA_0183 
-                         else NMEA2000Formatter())
+        self.formatter = (
+            NMEA0183Formatter()
+            if version == NMEAVersion.NMEA_0183
+            else NMEA2000Formatter()
+        )
 
     def send_nmea(self, message: Union[str, NMEA2000Message]):
         """
         Send NMEA message in appropriate format.
-        
+
         Args:
             message: NMEA message to send (string for 0183, NMEA2000Message for 2000)
         """
@@ -73,19 +87,25 @@ class MessageService:
                 data = formatted_message.encode()
             else:
                 data = formatted_message
-                
+
             self.sock.sendto(data, (self.host, self.port))
             logging.debug(f"Sent NMEA {self.version.value}: {formatted_message}")
-            
+
         except Exception as e:
             logging.error(f"Error sending NMEA message: {e}")
             raise
 
-    def send_wind_messages(self, true_wind_speed: float, true_wind_direction: float,
-                          wind_data: WindData, heading: float, variation: float):
+    def send_wind_messages(
+        self,
+        true_wind_speed: float,
+        true_wind_direction: float,
+        wind_data: WindData,
+        heading: float,
+        variation: float,
+    ):
         """
         Send all wind-related NMEA messages (MWV and MWD).
-        
+
         Args:
             true_wind_speed: True wind speed in knots
             true_wind_direction: True wind direction in degrees (FROM)
@@ -134,19 +154,21 @@ class MessageService:
             f"A"  # Status: A for valid data
         )
         self.send_nmea(mwv)
-    
-    def send_gga(self,
-                 position: Dict[str, float],
-                 gps_quality: int,
-                 satellites_in_use: int,
-                 hdop: float,
-                 altitude: float,
-                 geoid_separation: float,
-                 dgps_age: str,
-                 dgps_station: str):
+
+    def send_gga(
+        self,
+        position: Dict[str, float],
+        gps_quality: int,
+        satellites_in_use: int,
+        hdop: float,
+        altitude: float,
+        geoid_separation: float,
+        dgps_age: str,
+        dgps_station: str,
+    ):
         """
         Create and send a GGA (Global Positioning System Fix Data) sentence.
-        
+
         Args:
             position: Dict with 'lat' and 'lon' keys in decimal degrees
             gps_quality: GPS Quality indicator (0-8)
@@ -183,21 +205,21 @@ class MessageService:
             f"{dgps_age},"  # DGPS age (empty if not used)
             f"{dgps_station}"  # DGPS station ID (empty if not used)
         )
-        
+
         self.send_nmea(gga)
 
     def send_xte(self, route_manager: RouteManager, current_position: Position):
         """
         Create and send an XTE (Cross-Track Error) sentence.
         Format: $--XTE,A,A,x.x,L/R,N,A*hh
-        
+
         Args:
             route_manager: Route manager containing current route segment
             current_position: Current vessel position
         """
         # Get current segment
         segment = route_manager.get_current_segment()
-        
+
         """
 The XTE sentence fields are:
 1. Cyclic Lock Status, A=valid
@@ -225,7 +247,7 @@ The XTE sentence fields are:
                 segment.start.lat,
                 segment.start.lon,
                 segment.end.lat,
-                segment.end.lon
+                segment.end.lon,
             )
 
         # Build the XTE sentence (using NMEA 2.3 format with mode indicator)
@@ -237,17 +259,17 @@ The XTE sentence fields are:
             f"N,"  # Units (Nautical Miles)
             f"A"  # Mode indicator (A=Autonomous)
         )
-        
+
         self.send_nmea(xte)
 
     def send_dbt(self, depth_meters: float):
         """
         Create and send a DBT (Depth Below Transducer) sentence.
         Converts the depth in meters to feet and fathoms and formats according to NMEA spec.
-        
+
         Args:
             depth_meters: Depth below transducer in meters
-            
+
         Format: $--DBT,x.x,f,x.x,M,x.x,F*hh
             - x.x,f = depth in feet
             - x.x,M = depth in meters
@@ -256,7 +278,6 @@ The XTE sentence fields are:
         # Conversion factors
         METERS_TO_FEET = 3.28084
         METERS_TO_FATHOMS = 0.546807
-
 
         """
         DBT sentence fields are:
@@ -280,20 +301,19 @@ The XTE sentence fields are:
             f"{depth_meters:.1f},M,"  # Depth in meters
             f"{depth_fathoms:.1f},F"  # Depth in fathoms
         )
-        
-        self.send_nmea(dbt)
 
+        self.send_nmea(dbt)
 
     def send_rsa(self, starboard_rudder: float, port_rudder: Optional[float] = None):
         """
         Create and send an RSA (Rudder Sensor Angle) sentence.
         Format: $--RSA,x.x,A,x.x,A*hh
-        
+
         Args:
             starboard_rudder: Starboard (or single) rudder angle in degrees
                              (positive = starboard, negative = port)
             port_rudder: Optional port rudder angle for dual rudder vessels
-            
+
         Note:
             Status field 'A' indicates valid data
             Status field 'V' would indicate invalid data
@@ -317,16 +337,16 @@ The XTE sentence fields are:
             rsa = (
                 f"HCRSA,"
                 f"{starboard_rudder:.1f},A,"  # Starboard rudder + status
-                f"{port_rudder:.1f},A"        # Port rudder + status
+                f"{port_rudder:.1f},A"  # Port rudder + status
             )
         else:
             # Single rudder format
             rsa = (
                 f"HCRSA,"
                 f"{starboard_rudder:.1f},A,"  # Single rudder + status
-                f","                          # Empty port rudder fields
+                f","  # Empty port rudder fields
             )
-        
+
         self.send_nmea(rsa)
 
     def send_unsupported_message(self):
@@ -339,12 +359,12 @@ The XTE sentence fields are:
         """
         Create a VHW (Water Speed and Heading) sentence.
         Format: $--VHW,x.x,T,x.x,M,x.x,N,x.x,K*hh
-        
+
         Args:
             heading: True heading in degrees
             water_speed: Speed through water in knots
             variation: Magnetic variation in degrees (East negative)
-            
+
         Note:
             - True heading and magnetic heading are both sent
             - Speed is sent in both knots and km/h
@@ -377,17 +397,16 @@ The XTE sentence fields are:
             f"{water_speed:.1f},N,"  # Speed in knots
             f"{speed_kmh:.1f},K"  # Speed in km/h
         )
-        
+
         self.send_nmea(vhw)
 
-    def send_rmb(self, 
-                 route_manager: RouteManager, 
-                 current_position: Position,
-                 sog: float):
+    def send_rmb(
+        self, route_manager: RouteManager, current_position: Position, sog: float
+    ):
         """
         Create and send an RMB (Recommended Minimum Navigation) sentence.
         Format: $--RMB,A,x.x,a,c--c,c--c,llll.ll,a,yyyyy.yy,a,x.x,x.x,x.x,A,A*hh
-        
+
         Args:
             route_manager: Route manager containing waypoint information
             current_position: Current vessel position
@@ -414,7 +433,7 @@ The XTE sentence fields are:
         Example: $GPRMB,A,0.66,L,003,004,4917.24,N,12309.57,W,001.3,052.5,000.5,V,A*20
         """
         segment = route_manager.get_current_segment()
-        
+
         if segment is None:
             # No active waypoint - send empty RMB
             rmb = (
@@ -435,7 +454,7 @@ The XTE sentence fields are:
                 segment.start.lat,
                 segment.start.lon,
                 segment.end.lat,
-                segment.end.lon
+                segment.end.lon,
             )
 
             # Calculate range and bearing to destination
@@ -443,14 +462,14 @@ The XTE sentence fields are:
                 current_position.lat,
                 current_position.lon,
                 segment.end.lat,
-                segment.end.lon
+                segment.end.lon,
             )
 
             bearing = calculate_bearing(
                 current_position.lat,
                 current_position.lon,
                 segment.end.lat,
-                segment.end.lon
+                segment.end.lon,
             )
 
             # Calculate VMG (Velocity Made Good) towards waypoint
@@ -525,8 +544,9 @@ The XTE sentence fields are:
         )
         self.send_nmea(mwv)
 
-    def send_mwd(self, true_wind_speed: float, true_wind_direction: float, 
-                variation: float):
+    def send_mwd(
+        self, true_wind_speed: float, true_wind_direction: float, variation: float
+    ):
         """
         Send MWD (Wind Direction and Speed) sentence.
         Format: $--MWD,x.x,T,x.x,M,x.x,N,x.x,M*hh
@@ -564,22 +584,23 @@ The XTE sentence fields are:
         mwd = (
             f"WIMWD,"
             f"{true_wind_direction:.1f},T,"  # True wind direction
-            f"{magnetic_wind_dir:.1f},M,"    # Magnetic wind direction
-            f"{true_wind_speed:.1f},N,"      # Wind speed in knots
-            f"{wind_speed_ms:.1f},M"         # Wind speed in m/s
+            f"{magnetic_wind_dir:.1f},M,"  # Magnetic wind direction
+            f"{true_wind_speed:.1f},N,"  # Wind speed in knots
+            f"{wind_speed_ms:.1f},M"  # Wind speed in m/s
         )
         self.send_nmea(mwd)
 
-
-    def send_essential_data(self, 
-                          position: Dict[str, float],
-                          sog: float,
-                          cog: float,
-                          heading: float,
-                          variation: float):
+    def send_essential_data(
+        self,
+        position: Dict[str, float],
+        sog: float,
+        cog: float,
+        heading: float,
+        variation: float,
+    ):
         """
         Send essential navigation data messages (RMC, HDT, HDM, HDG).
-        
+
         Args:
             position: Dict with 'lat' and 'lon' keys in decimal degrees
             sog: Speed over ground in knots

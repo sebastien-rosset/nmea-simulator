@@ -1,5 +1,6 @@
 class PGN:
     """NMEA 2000 Parameter Group Numbers"""
+
     SYSTEM_TIME = 126992
     VESSEL_HEADING = 127250
     RATE_OF_TURN = 127251

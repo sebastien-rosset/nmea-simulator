@@ -6,13 +6,13 @@ from datetime import timedelta
 from src.simulator import BasicNavSimulator
 from src.models.ais_vessel import AISVessel
 
+
 def main():
     """Run the NMEA simulator with example configuration"""
-    
+
     # Set up logging
     logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
     # Create simulator instance
@@ -122,6 +122,7 @@ def main():
         wind_speed=15.0,  # 15 knots of wind
         ais_vessels=ais_vessels,
     )
+
 
 if __name__ == "__main__":
     main()

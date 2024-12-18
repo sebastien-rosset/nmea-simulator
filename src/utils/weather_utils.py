@@ -2,18 +2,25 @@ import math
 from dataclasses import dataclass
 from typing import Tuple
 
+
 @dataclass
 class WindData:
     """Container for wind calculation results"""
+
     apparent_speed: float  # knots
     apparent_angle: float  # degrees relative to bow (-180 to +180)
 
-def calculate_apparent_wind(true_wind_speed: float, true_wind_direction: float,
-                          vessel_speed: float, vessel_heading: float) -> WindData:
+
+def calculate_apparent_wind(
+    true_wind_speed: float,
+    true_wind_direction: float,
+    vessel_speed: float,
+    vessel_heading: float,
+) -> WindData:
     """
     Calculate apparent wind based on true wind and vessel movement.
     Uses vector mathematics to combine true wind and vessel motion.
-    
+
     Args:
         true_wind_speed: Wind speed in knots
         true_wind_direction: Direction wind is coming FROM in degrees true

@@ -2,25 +2,32 @@ import math
 from dataclasses import dataclass
 from typing import Tuple
 
+
 @dataclass
 class RudderState:
     """Container for rudder state information"""
+
     starboard_angle: float  # degrees
     port_angle: float  # degrees
     max_angle: float  # maximum deflection in degrees
     has_dual_rudder: bool
 
+
 @dataclass
 class VesselDynamics:
     """Container for vessel dynamics calculations"""
+
     heading: float  # degrees true
     turn_rate: float  # degrees per second
 
-def update_rudder_angle(current_rudder: float, 
-                       desired_heading: float,
-                       current_heading: float,
-                       max_rudder_angle: float,
-                       delta_time: float) -> float:
+
+def update_rudder_angle(
+    current_rudder: float,
+    desired_heading: float,
+    current_heading: float,
+    max_rudder_angle: float,
+    delta_time: float,
+) -> float:
     """
     Update rudder angle based on desired vs current heading.
     Simple P controller for rudder adjustment.
@@ -59,10 +66,10 @@ def update_rudder_angle(current_rudder: float,
 
     return new_rudder
 
-def calculate_vessel_dynamics(heading: float,
-                            rudder_angle: float,
-                            max_rudder_angle: float,
-                            delta_time: float) -> VesselDynamics:
+
+def calculate_vessel_dynamics(
+    heading: float, rudder_angle: float, max_rudder_angle: float, delta_time: float
+) -> VesselDynamics:
     """
     Calculate vessel dynamics based on rudder angle.
 

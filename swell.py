@@ -12,79 +12,106 @@ class ControlPanel(tk.Frame):
     def __init__(self, master, simulator):
         super().__init__(master)
         self.simulator = simulator
-        
+
         # True Wind Controls
         tws_frame = ttk.LabelFrame(self, text="True Wind")
         tws_frame.pack(fill="x", padx=5, pady=5)
-        
+
         # TWS Controls
         ttk.Label(tws_frame, text="TWS (knots):").grid(row=0, column=0, padx=5)
         self.tws_var = tk.DoubleVar(value=15.0)
-        self.tws_slider = ttk.Scale(tws_frame, from_=0, to=60, variable=self.tws_var,
-                                  orient="horizontal", command=self.update_simulator)
+        self.tws_slider = ttk.Scale(
+            tws_frame,
+            from_=0,
+            to=60,
+            variable=self.tws_var,
+            orient="horizontal",
+            command=self.update_simulator,
+        )
         self.tws_slider.grid(row=0, column=1, sticky="ew", padx=5)
         self.tws_value_label = ttk.Label(tws_frame, text="15.0", width=5)
         self.tws_value_label.grid(row=0, column=2, padx=5)
-        
+
         # TWD Controls
         ttk.Label(tws_frame, text="TWD (degrees):").grid(row=1, column=0, padx=5)
         self.twd_var = tk.DoubleVar(value=180.0)
-        self.twd_slider = ttk.Scale(tws_frame, from_=0, to=359, variable=self.twd_var,
-                                  orient="horizontal", command=self.update_simulator)
+        self.twd_slider = ttk.Scale(
+            tws_frame,
+            from_=0,
+            to=359,
+            variable=self.twd_var,
+            orient="horizontal",
+            command=self.update_simulator,
+        )
         self.twd_slider.grid(row=1, column=1, sticky="ew", padx=5)
         self.twd_value_label = ttk.Label(tws_frame, text="180", width=5)
         self.twd_value_label.grid(row=1, column=2, padx=5)
-        
+
         # Boat Motion Controls
         boat_frame = ttk.LabelFrame(self, text="Boat Motion")
         boat_frame.pack(fill="x", padx=5, pady=5)
-        
+
         # SOG Controls
         ttk.Label(boat_frame, text="SOG (knots):").grid(row=0, column=0, padx=5)
         self.sog_var = tk.DoubleVar(value=6.0)
-        self.sog_slider = ttk.Scale(boat_frame, from_=0, to=15, variable=self.sog_var,
-                                  orient="horizontal", command=self.update_simulator)
+        self.sog_slider = ttk.Scale(
+            boat_frame,
+            from_=0,
+            to=15,
+            variable=self.sog_var,
+            orient="horizontal",
+            command=self.update_simulator,
+        )
         self.sog_slider.grid(row=0, column=1, sticky="ew", padx=5)
         self.sog_value_label = ttk.Label(boat_frame, text="6.0", width=5)
         self.sog_value_label.grid(row=0, column=2, padx=5)
-        
+
         # COG Controls
         ttk.Label(boat_frame, text="COG (degrees):").grid(row=1, column=0, padx=5)
         self.cog_var = tk.DoubleVar(value=90.0)
-        self.cog_slider = ttk.Scale(boat_frame, from_=0, to=359, variable=self.cog_var,
-                                  orient="horizontal", command=self.update_simulator)
+        self.cog_slider = ttk.Scale(
+            boat_frame,
+            from_=0,
+            to=359,
+            variable=self.cog_var,
+            orient="horizontal",
+            command=self.update_simulator,
+        )
         self.cog_slider.grid(row=1, column=1, sticky="ew", padx=5)
         self.cog_value_label = ttk.Label(boat_frame, text="90", width=5)
         self.cog_value_label.grid(row=1, column=2, padx=5)
-        
+
         # Mast Roll Effect Control
         roll_frame = ttk.LabelFrame(self, text="Roll Effect")
         roll_frame.pack(fill="x", padx=5, pady=5)
-        
+
         self.roll_effect_var = tk.BooleanVar(value=True)
-        self.roll_effect_check = ttk.Checkbutton(roll_frame, text="Enable Mast Roll Effect",
-                                                variable=self.roll_effect_var,
-                                                command=self.update_simulator)
+        self.roll_effect_check = ttk.Checkbutton(
+            roll_frame,
+            text="Enable Mast Roll Effect",
+            variable=self.roll_effect_var,
+            command=self.update_simulator,
+        )
         self.roll_effect_check.pack(padx=5, pady=5)
-        
+
         # Configure grid weights
         tws_frame.columnconfigure(1, weight=1)
         boat_frame.columnconfigure(1, weight=1)
-    
+
     def update_simulator(self, *args):
         # Update value labels
         self.tws_value_label.config(text=f"{self.tws_var.get():.1f}")
         self.twd_value_label.config(text=f"{int(self.twd_var.get())}")
         self.sog_value_label.config(text=f"{self.sog_var.get():.1f}")
         self.cog_value_label.config(text=f"{int(self.cog_var.get())}")
-        
+
         # Update simulator parameters
         self.simulator.update_parameters(
             tws=self.tws_var.get(),
             twd=self.twd_var.get(),
             sog=self.sog_var.get(),
             cog=self.cog_var.get(),
-            roll_effect=self.roll_effect_var.get()
+            roll_effect=self.roll_effect_var.get(),
         )
 
 
@@ -397,9 +424,9 @@ class WaveMotionSimulator:
         # Wind vane physical characteristics
         self.vane_inertia = 0.8  # Higher value means more resistance to quick changes
         self.vane_damping = 0.6  # Air resistance damping factor
-        self.last_awa = 0.0      # Keep track of previous angle for inertia calculation
-        self.awa_rate = 0.0      # Angular velocity of the vane
-        self.last_t = None       # For calculating time delta
+        self.last_awa = 0.0  # Keep track of previous angle for inertia calculation
+        self.awa_rate = 0.0  # Angular velocity of the vane
+        self.last_t = None  # For calculating time delta
 
     def update_parameters(
         self, tws=None, twd=None, sog=None, cog=None, roll_effect=None
@@ -416,28 +443,30 @@ class WaveMotionSimulator:
         if roll_effect is not None:
             self.roll_effect = roll_effect
 
-    def calculate_apparent_wind(self, boat_speed, boat_direction, wind_speed, wind_direction):
+    def calculate_apparent_wind(
+        self, boat_speed, boat_direction, wind_speed, wind_direction
+    ):
         """Calculate apparent wind speed and angle from true wind and boat motion"""
         # Convert to radians
         boat_dir_rad = math.radians(boat_direction)
         wind_dir_rad = math.radians(wind_direction)
-        
+
         # Convert to vector components
         boat_x = boat_speed * math.sin(boat_dir_rad)
         boat_y = boat_speed * math.cos(boat_dir_rad)
         wind_x = wind_speed * math.sin(wind_dir_rad)
         wind_y = wind_speed * math.cos(wind_dir_rad)
-        
+
         # Calculate relative wind components
         rel_x = wind_x - boat_x
         rel_y = wind_y - boat_y
-        
+
         # Calculate apparent wind speed and direction
         aws = math.sqrt(rel_x**2 + rel_y**2)
         awa = math.degrees(math.atan2(rel_x, rel_y))
         if awa < 0:
             awa += 360
-        
+
         return aws, awa
 
     def calculate_all_wind(self, t):
@@ -445,87 +474,94 @@ class WaveMotionSimulator:
         # Initialize time tracking on first call
         if self.last_t is None:
             self.last_t = t
-            
+
         dt = t - self.last_t
         self.last_t = t
-        
+
         # Convert speeds from knots to m/s for internal calculations
         tws_ms = self.tws * 0.514444
         sog_ms = self.sog * 0.514444
-        
+
         # Calculate roll effect
-        roll = self.max_roll * np.sin(2 * np.pi * t / self.wave_period) * \
-               np.exp(-self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period)))
-        roll_rate = self.max_roll * (2 * np.pi / self.wave_period) * \
-                    np.cos(2 * np.pi * t / self.wave_period)
-        
+        roll = (
+            self.max_roll
+            * np.sin(2 * np.pi * t / self.wave_period)
+            * np.exp(-self.roll_damping * abs(np.sin(2 * np.pi * t / self.wave_period)))
+        )
+        roll_rate = (
+            self.max_roll
+            * (2 * np.pi / self.wave_period)
+            * np.cos(2 * np.pi * t / self.wave_period)
+        )
+
         if self.roll_effect:
             # Calculate vertical velocity at masthead due to roll
             roll_velocity = roll_rate * self.mast_height
-            
+
             # Calculate theoretical instantaneous wind direction based on roll velocity
             if abs(roll_velocity) < 0.01:
                 target_awa = self.last_awa  # Keep current direction if barely moving
             else:
                 # Wind direction based on vertical motion
                 target_awa = 90 if roll_velocity > 0 else 270
-            
+
             # Calculate the difference in angle, handling the 0/360 wraparound
             angle_diff = target_awa - self.last_awa
             if angle_diff > 180:
                 angle_diff -= 360
             elif angle_diff < -180:
                 angle_diff += 360
-                
+
             # Apply inertia and damping to the vane movement
             # Update angular velocity (awa_rate) based on the target direction
             self.awa_rate += (angle_diff / self.vane_inertia) * dt
             # Apply damping to angular velocity
-            self.awa_rate *= (1 - self.vane_damping * dt)
-            
+            self.awa_rate *= 1 - self.vane_damping * dt
+
             # Update the AWA based on angular velocity
             new_awa = self.last_awa + self.awa_rate * dt
-            
+
             # Normalize to 0-360 range
             while new_awa >= 360:
                 new_awa -= 360
             while new_awa < 0:
                 new_awa += 360
-                
+
             # Calculate AWS based on roll velocity
             aws = abs(roll_velocity)
-            
+
             self.last_awa = new_awa
             aws_kts = aws / 0.514444
-            
+
             return self.tws, self.twd, aws_kts, new_awa
-            
+
         # If roll effect is disabled, calculate normal wind triangle
         boat_dir_rad = math.radians(self.cog)
         wind_dir_rad = math.radians(self.twd)
-        
+
         # Boat motion vector components
         boat_x = sog_ms * math.sin(boat_dir_rad)
         boat_y = sog_ms * math.cos(boat_dir_rad)
-        
+
         # True wind vector components
         wind_x = tws_ms * math.sin(wind_dir_rad)
         wind_y = tws_ms * math.cos(wind_dir_rad)
-        
+
         # Calculate relative wind vector
         rel_x = wind_x - boat_x
         rel_y = wind_y - boat_y
-        
+
         # Calculate apparent wind
         aws = math.sqrt(rel_x**2 + rel_y**2)
         awa = math.degrees(math.atan2(rel_x, rel_y))
         if awa < 0:
             awa += 360
-            
+
         self.last_awa = awa
         aws_kts = aws / 0.514444
-        
+
         return self.tws, self.twd, aws_kts, awaal
+
 
 if __name__ == "__main__":
     # Create simulator instance

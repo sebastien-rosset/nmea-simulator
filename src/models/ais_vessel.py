@@ -5,6 +5,7 @@ from datetime import datetime, UTC
 from typing import List, Dict, Union
 from ..utils.coordinate_utils import parse_coordinate
 
+
 class AISVessel:
     """AIS Vessel class"""
 
