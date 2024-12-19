@@ -72,31 +72,12 @@ class NMEA2000Formatter:
 
                 # Handle both single messages and lists of messages
                 if isinstance(result, list):
-                    # For messages that return multiple PGNs (like RMC)
-                    if not isinstance(expected_pgns, list):
-                        raise ValueError(
-                            f"Unexpected multiple messages from {msg_type}"
-                        )
-
-                    # Verify each message's PGN matches expected
-                    for msg, expected_pgn in zip(result, expected_pgns):
-                        if msg.pgn != expected_pgn:
-                            raise ValueError(f"PGN mismatch for {msg_type}")
-
-                    # Return the first message's data (we can only return one)
-                    return result[0].data if result else b""
+                    return self._format_2000_message(result[0]) if result else b""
                 else:
-                    # For single message conversions
-                    if isinstance(expected_pgns, list):
-                        raise ValueError(f"Expected multiple messages from {msg_type}")
-
-                    if result and result.pgn == expected_pgns:
-                        return result.data
-                    else:
-                        raise ValueError(f"PGN mismatch for message type {msg_type}")
+                    return self._format_2000_message(result) if result else b""
             else:
                 if msg_type:
-                    logging.debug(f"Ignoring unsupported message type: {msg_type}")
+                    logging.error(f"Ignoring unsupported message type: {msg_type}")
                 return b""
 
         except Exception as e:
@@ -104,13 +85,42 @@ class NMEA2000Formatter:
             return b""
 
     def _format_2000_message(self, message: NMEA2000Message) -> bytes:
-        """Format native NMEA 2000 message"""
+        """
+        Format native NMEA 2000 message with proper CAN frame structure.
+
+        Frame format:
+        - 29-bit CAN ID (4 bytes)
+        - Length (1 byte)
+        - Data (variable length)
+        - Optional padding to maintain minimum frame size
+        """
         try:
             frame = bytearray()
-            header = (message.priority << 26) | (message.pgn << 8) | message.source
-            frame.extend(header.to_bytes(4, "big"))
+
+            # Construct 29-bit CAN ID
+            can_id = (
+                (message.priority & 0x7) << 26  # Priority (3 bits)
+                | ((message.pgn >> 8) & 0xFF) << 16  # PF byte
+                | (message.pgn & 0xFF) << 8  # PS byte
+                | (message.source & 0xFF)  # Source Address
+            )
+
+            # Add CAN ID (4 bytes)
+            frame.extend(can_id.to_bytes(4, "big"))
+
+            # Add length byte
+            data_length = len(message.data)
+            frame.append(data_length)
+
+            # Add data
             frame.extend(message.data)
+
+            # Add padding if needed (minimum frame size is 13 bytes)
+            while len(frame) < 13:
+                frame.append(0xFF)
+
             return bytes(frame)
+
         except Exception as e:
             logging.error(f"Error formatting NMEA 2000 message: {str(e)}")
             return b""

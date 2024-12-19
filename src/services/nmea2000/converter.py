@@ -73,6 +73,14 @@ class NMEA2000Converter:
             # Parse position
             lat, lon = self._parse_lat_lon(fields[3], fields[4], fields[5], fields[6])
 
+            # Clamp latitude to valid range and convert to unsigned integer
+            lat = max(-90, min(90, lat))
+            lat_int = int((lat * 1e7) % 4294967296)  # Handle unsigned 32-bit wraparound
+
+            # Handle longitude wraparound and convert to unsigned integer
+            lon = ((lon + 180) % 360) - 180
+            lon_int = int((lon * 1e7) % 4294967296)  # Handle unsigned 32-bit wraparound
+
             # Parse speed and course
             sog = float(fields[7]) if fields[7] else 0.0
             cog = float(fields[8]) if fields[8] else 0.0
@@ -104,9 +112,9 @@ class NMEA2000Converter:
 
             # Position Rapid Update (PGN 129025)
             pos_data = struct.pack(
-                "<ii",  # Use i (signed int) instead of l
-                int(lat * 1e7),  # Latitude in 1e-7 degrees
-                int(lon * 1e7),  # Longitude in 1e-7 degrees
+                "<II",  # Use unsigned integers for lat/lon
+                lat_int,  # Latitude in 1e-7 degrees
+                lon_int,  # Longitude in 1e-7 degrees
             )
 
             messages.append(
@@ -120,12 +128,20 @@ class NMEA2000Converter:
             )
 
             # COG & SOG, Rapid Update (PGN 129026)
+            # Convert speed to unsigned value (in 1/100th knot)
+            sog_int = int(
+                max(0, min(sog * 100, 65535))
+            )  # Clamp to 16-bit unsigned range
+
+            # Convert course to unsigned value (in 1/10000th degree)
+            cog_int = int((cog * 10000) % 65536)  # Wrap to 16-bit unsigned range
+
             cog_sog_data = struct.pack(
-                "<BBHh",  # Use h (signed short) for speed
+                "<BBHH",  # Use unsigned short for both values
                 0xFF,  # SID (not used)
                 0,  # COG Reference (0 = True)
-                int(cog * 10000) & 0xFFFF,  # COG in 1/10000th of a degree
-                int(sog * 100),  # SOG in 1/100th of a knot
+                cog_int,  # COG in 1/10000th degree
+                sog_int,  # SOG in 1/100th knot
             )
 
             messages.append(
