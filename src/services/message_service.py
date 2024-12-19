@@ -8,7 +8,7 @@ import random
 from typing import Dict, Optional, Union
 
 from src.models.route import Position, RouteManager
-from .nmea2000 import NMEA2000Formatter, NMEA2000Message
+from .nmea2000 import NMEA2000Formatter, NMEA2000Message, MessageVerifier, PGN
 from src.utils.coordinate_utils import (
     calculate_bearing,
     calculate_cross_track_error,
@@ -64,6 +64,36 @@ class MessageService:
         port: int = 10110,
         version: NMEAVersion = NMEAVersion.NMEA_0183,
     ):
+        """
+        Initialize the NMEA message service.
+
+        This service handles formatting and sending NMEA messages over UDP.
+        It supports both NMEA 0183 and NMEA 2000 protocols.
+
+        Args:
+            host: The IP address to send messages to. Defaults to localhost (127.0.0.1).
+                For local testing, use localhost. For sending to other devices on the network,
+                use their IP address.
+
+            port: The UDP port number to send messages to. Defaults to 10110.
+                - 10110 is the standard port for NMEA 0183 over UDP
+                - For NMEA 2000, this port will receive the CAN frames encapsulated in UDP
+                - The port must match the receiving application's configuration (e.g., OpenCPN)
+
+            version: The NMEA protocol version to use. Defaults to NMEA 0183.
+                    Determines how messages will be formatted:
+                    - NMEA 0183: ASCII strings with checksum
+                    - NMEA 2000: Binary CAN frames
+
+        Creates:
+            - UDP socket for sending messages
+            - Appropriate message formatter based on protocol version
+
+        Note:
+            The UDP socket is connectionless, so no connection needs to be established.
+            Messages will be sent regardless of whether anything is listening on the target
+            host:port combination.
+        """
         self.sock = socket(AF_INET, SOCK_DGRAM)
         self.host = host
         self.port = port
@@ -84,23 +114,41 @@ class MessageService:
         try:
             formatted_message = self.formatter.format_message(message)
 
-            # Handle NMEA 0183 string messages being converted to 2000
-            if isinstance(message, str):
-                data = formatted_message  # Already in bytes for 2000
-                if self.version == NMEAVersion.NMEA_2000:
-                    # Show original NMEA 0183 message and what it's being converted to
-                    log_message = f"Converting {message.strip()} -> Raw bytes: {formatted_message.hex()}"
+            if self.version == NMEAVersion.NMEA_2000:
+                if isinstance(message, str):
+                    # NMEA 0183 sentence has been converted to NMEA 2000 message.
+                    data = formatted_message  # Already in bytes for 2000
+                elif isinstance(message, NMEA2000Message):
+                    data = formatted_message
+                    if isinstance(message, NMEA2000Message):
+                        # Log detailed NMEA 2000 message information
+                        logging.debug(f"Sending NMEA 2000 Message:")
+                        logging.debug(f"  PGN: {message.pgn}")
+                        logging.debug(f"  Priority: {message.priority}")
+                        logging.debug(f"  Source: {message.source}")
+                        logging.debug(f"  Destination: {message.destination}")
+                        logging.debug(f"  Data Length: {len(message.data)}")
+                        logging.debug(f"  Data Hex: {message.data.hex()}")
                 else:
+                    raise ValueError(f"Unsupported message type: {type(message)}")
+            elif self.version == NMEAVersion.NMEA_0183:
+                if isinstance(message, str):
                     # Regular NMEA 0183 message
                     data = formatted_message.encode()
                     log_message = formatted_message.strip()
-
-            # Handle native NMEA 2000 messages
-            elif isinstance(message, NMEA2000Message):
-                data = formatted_message
-                log_message = f"[{message.pgn}] {message.get_description()} - {message.get_readable_fields()}"
+                else:
+                    raise ValueError(f"Conversion from NMEA 2000 to 0183 not supported")
             else:
-                raise ValueError(f"Unsupported message type: {type(message)}")
+                raise ValueError(f"Unsupported NMEA version: {self.version}")
+
+            if self.version == NMEAVersion.NMEA_2000:
+                # Additional verification before sending
+                verifier = MessageVerifier()
+                frame_info = verifier.verify_can_frame(data)
+                log_message = f"Sending PGN {frame_info['pgn']} ({PGN.get_description(frame_info['pgn'])}) Raw bytes: {data.hex()}"
+                # Show original NMEA 0183 message and what it's being converted to.
+                if isinstance(message, str):
+                    log_message += f" Converted from {message.strip()}"
 
             self.sock.sendto(data, (self.host, self.port))
             logging.debug(f"Sent NMEA {self.version.value}: {log_message}")
