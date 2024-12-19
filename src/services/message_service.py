@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM
 import logging
-import random
-from typing import Dict, Optional, Union
+import re
+from typing import Dict, Optional, Union, List
 
 from src.models.route import Position, RouteManager
 from .nmea2000 import NMEA2000Formatter, NMEA2000Message, MessageVerifier, PGN
@@ -63,6 +63,7 @@ class MessageService:
         host: str = "127.0.0.1",
         port: int = 10110,
         version: NMEAVersion = NMEAVersion.NMEA_0183,
+        exclude_sentences: List[str] = None,
     ):
         """
         Initialize the NMEA message service.
@@ -85,6 +86,8 @@ class MessageService:
                     - NMEA 0183: ASCII strings with checksum
                     - NMEA 2000: Binary CAN frames
 
+            excluded_sentences: List of NMEA 0183 sentence types to exclude from sending.
+
         Creates:
             - UDP socket for sending messages
             - Appropriate message formatter based on protocol version
@@ -103,6 +106,48 @@ class MessageService:
             if version == NMEAVersion.NMEA_0183
             else NMEA2000Formatter()
         )
+        # All possible sentence types
+        self.all_sentence_types = [
+            "RMC",
+            "GGA",
+            "HDT",
+            "HDM",
+            "HDG",
+            "DBT",
+            "MWV",
+            "XTE",
+            "RMB",
+            "VHW",
+            "RSA",
+            "MWD",
+        ]
+
+        # Set up sentence exclusion
+        self.exclude_sentences = exclude_sentences or []
+
+        # Validate excluded sentences
+        invalid_sentences = set(self.exclude_sentences) - set(self.all_sentence_types)
+        if invalid_sentences:
+            raise ValueError(f"Invalid sentence types to exclude: {invalid_sentences}")
+
+    def _should_send_sentence(self, message: str) -> bool:
+        """
+        Determine if a given sentence should be sent based on enabled sentences.
+
+        Args:
+            message: The NMEA message to check
+
+        Returns:
+            bool: True if the sentence should be sent, False otherwise
+        """
+        # Extract the sentence type (without talker ID)
+        match = re.match(r"\$?[A-Z]{2}([A-Z]{3})", message)
+        send = False
+        sentence_type = None
+        if match:
+            sentence_type = match.group(1)
+            send = sentence_type not in self.exclude_sentences
+        return send
 
     def send_nmea(self, message: Union[str, NMEA2000Message]):
         """
@@ -150,8 +195,14 @@ class MessageService:
                 if isinstance(message, str):
                     log_message += f" Converted from {message.strip()}"
 
-            self.sock.sendto(data, (self.host, self.port))
-            logging.debug(f"Sent NMEA {self.version.value}: {log_message}")
+            send = True
+            if isinstance(message, str):
+                send = self._should_send_sentence(message)
+            if send:
+                self.sock.sendto(data, (self.host, self.port))
+            logging.debug(
+                f"{"Send" if send else "Skip"} NMEA: {self.version.value}: {log_message}"
+            )
 
         except Exception as e:
             logging.error(f"Error sending NMEA message: {e}")

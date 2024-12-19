@@ -26,6 +26,7 @@ class BasicNavSimulator:
         host="127.0.0.1",
         port=10110,
         protocol: Literal["0183", "2000"] = "0183",
+        exclude_sentences: Optional[List[str]] = None,
     ):
         """
         Initialize simulator with network settings and subsystems.
@@ -40,7 +41,9 @@ class BasicNavSimulator:
             NMEAVersion.NMEA_0183 if protocol == "0183" else NMEAVersion.NMEA_2000
         )
         # Initialize managers and services
-        self.message_service = MessageService(host, port, version=nmea_version)
+        self.message_service = MessageService(
+            host, port, version=nmea_version, exclude_sentences=exclude_sentences
+        )
         self.route_manager = RouteManager()
         self.speed_manager = SpeedManager()
         self.environment_manager = EnvironmentManager()

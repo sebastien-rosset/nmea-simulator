@@ -47,6 +47,14 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level",
     )
+    parser.add_argument(
+        "--exclude-sentences",
+        nargs="+",
+        default=None,
+        help="List of NMEA 0183 sentences to exclude. "
+        "Options: RMC GGA HDT HDM HDG DBT MWV XTE RMB VHW RSA MWD. "
+        "If not specified, all sentences are sent.",
+    )
 
     args = parser.parse_args()
 
@@ -61,6 +69,7 @@ def main():
         host=args.host,
         port=args.port,
         protocol=args.protocol,
+        exclude_sentences=args.exclude_sentences,
     )
 
     # Example waypoints for a route in San Francisco Bay
