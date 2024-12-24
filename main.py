@@ -2,13 +2,14 @@
 
 import argparse
 import logging
+import yaml
 from datetime import timedelta
+from typing import Dict, Any, Optional
 
 from src.simulator import BasicNavSimulator
 from src.models.ais_vessel import AISVessel
 
-
-def parse_log_level(level_str):
+def parse_log_level(level_str: str) -> int:
     """Convert string log level to logging constant."""
     level_str = level_str.upper()
     levels = {
@@ -24,159 +25,118 @@ def parse_log_level(level_str):
         )
     return levels[level_str]
 
+def parse_timedelta(time_str: str) -> timedelta:
+    """Parse time string in format 'Xm' or 'Xs' into timedelta."""
+    if not time_str:
+        return None
+    unit = time_str[-1].lower()
+    value = float(time_str[:-1])
+    if unit == 'm':
+        return timedelta(minutes=value)
+    elif unit == 's':
+        return timedelta(seconds=value)
+    raise ValueError(f"Invalid time format: {time_str}. Use 'm' for minutes or 's' for seconds")
+
+def load_config(config_path: str) -> Dict[str, Any]:
+    """Load configuration from YAML file."""
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def create_ais_vessel(vessel_config: Dict[str, Any]) -> AISVessel:
+    """Create AIS vessel from configuration dictionary."""
+    return AISVessel(
+        mmsi=vessel_config['mmsi'],
+        vessel_name=vessel_config['vessel_name'],
+        ship_type=AISVessel.SHIP_TYPES[vessel_config['ship_type']],
+        position=vessel_config['position'],
+        navigation_status=AISVessel.NAV_STATUS[vessel_config['navigation_status']],
+        speed=vessel_config.get('speed', 0.0),
+        course=vessel_config.get('course'),
+        draft=vessel_config.get('draft')
+    )
+
+def parse_speed_profile(profile_config: list) -> list:
+    """Parse speed profile configuration."""
+    return [(parse_timedelta(item['duration']), item['speed']) 
+            for item in profile_config]
 
 def main():
-    """Run the NMEA simulator with example configuration"""
-
+    """Run the NMEA simulator with YAML configuration"""
     parser = argparse.ArgumentParser(description="NMEA Navigation Simulator")
+    parser.add_argument(
+        "--config", 
+        required=True,
+        help="Path to YAML configuration file"
+    )
+    # Optional command-line overrides
     parser.add_argument(
         "--protocol",
         choices=["0183", "2000"],
-        default="0183",
-        help="NMEA protocol version",
+        help="Override NMEA protocol version"
     )
     parser.add_argument(
-        "--host", default="127.0.0.1", help="Host address for UDP messages"
+        "--host",
+        help="Override host address for UDP messages"
     )
     parser.add_argument(
-        "--port", type=int, default=10110, help="Port number for UDP messages"
+        "--port",
+        type=int,
+        help="Override port number for UDP messages"
     )
     parser.add_argument(
         "--loglevel",
-        default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="Set the logging level",
-    )
-    parser.add_argument(
-        "--exclude-sentences",
-        nargs="+",
-        default=None,
-        help="List of NMEA 0183 sentences to exclude. "
-        "Options: RMC GGA HDT HDM HDG DBT MWV XTE RMB VHW RSA MWD. "
-        "If not specified, all sentences are sent.",
+        help="Override logging level"
     )
 
     args = parser.parse_args()
+    
+    # Load configuration
+    config = load_config(args.config)
+    
+    # Command-line arguments override config file
+    if args.protocol:
+        config['protocol'] = args.protocol
+    if args.host:
+        config['host'] = args.host
+    if args.port:
+        config['port'] = args.port
+    if args.loglevel:
+        config['loglevel'] = args.loglevel
 
     # Set up logging
     logging.basicConfig(
-        level=parse_log_level(args.loglevel),
+        level=parse_log_level(config.get('loglevel', 'INFO')),
         format="%(asctime)s - %(levelname)s - %(message)s",
     )
 
     # Create simulator instance
     simulator = BasicNavSimulator(
-        host=args.host,
-        port=args.port,
-        protocol=args.protocol,
-        exclude_sentences=args.exclude_sentences,
+        host=config.get('host', '127.0.0.1'),
+        port=config.get('port', 10110),
+        protocol=config.get('protocol', '0183'),
+        exclude_sentences=config.get('exclude_sentences')
     )
 
-    # Example waypoints for a route in San Francisco Bay
-    waypoints = [
-        {"lat": "37° 40.3574' N", "lon": "122° 22.1457' W"},
-        {"lat": "37° 43.4444' N", "lon": "122° 20.7058' W"},
-        {"lat": "37° 48.0941' N", "lon": "122° 22.7372' W"},
-        {"lat": "37° 49.1258' N", "lon": "122° 25.2814' W"},
-    ]
-
-    speed_profile = [
-        (timedelta(minutes=1), 8.0),
-        (timedelta(minutes=4), 0.1),  # Stall for 2 minutes
-        (timedelta(minutes=15), 10.0),
-        (None, 8.0),
-    ]
-
-    # Create some example AIS vessels
+    # Create AIS vessels from configuration
     ais_vessels = [
-        AISVessel(
-            mmsi=366123456,
-            vessel_name="BAY TRADER",
-            ship_type=AISVessel.SHIP_TYPES["CARGO"],
-            position={"lat": "37° 40.3575' N", "lon": "122° 22.1460' W"},
-            navigation_status=AISVessel.NAV_STATUS["UNDERWAY_ENGINE"],
-            speed=12.0,
-            course=50.0,
-        ),
-        AISVessel(
-            mmsi=366123457,
-            vessel_name="ANCHOR QUEEN",
-            ship_type=AISVessel.SHIP_TYPES["TANKER"],
-            position={"lat": "37° 40.4575' N", "lon": "122° 22.2460' W"},
-            navigation_status=AISVessel.NAV_STATUS["AT_ANCHOR"],
-            speed=0.0,
-        ),
-        AISVessel(
-            mmsi=366123458,
-            vessel_name="DISABLED LADY",
-            ship_type=AISVessel.SHIP_TYPES["CARGO"],
-            position={"lat": "37° 40.5575' N", "lon": "122° 22.3460' W"},
-            navigation_status=AISVessel.NAV_STATUS["NOT_UNDER_COMMAND"],
-            speed=0.1,
-        ),
-        AISVessel(
-            mmsi=366123459,
-            vessel_name="DREDGER ONE",
-            ship_type=AISVessel.SHIP_TYPES["DREDGER"],
-            position={"lat": "37° 40.6575' N", "lon": "122° 22.4460' W"},
-            navigation_status=AISVessel.NAV_STATUS["RESTRICTED_MANEUVER"],
-            speed=3.0,
-        ),
-        AISVessel(
-            mmsi=366123460,
-            vessel_name="DEEP DRAFT",
-            ship_type=AISVessel.SHIP_TYPES["TANKER"],
-            draft=15.5,
-            position={"lat": "37° 40.7575' N", "lon": "122° 22.5460' W"},
-            navigation_status=AISVessel.NAV_STATUS["CONSTRAINED_DRAFT"],
-            speed=15.0,
-        ),
-        AISVessel(
-            mmsi=366123461,
-            vessel_name="PIER SIDE",
-            ship_type=AISVessel.SHIP_TYPES["CARGO"],
-            position={"lat": "37° 40.8575' N", "lon": "122° 22.6460' W"},
-            navigation_status=AISVessel.NAV_STATUS["MOORED"],
-            speed=0.0,
-        ),
-        AISVessel(
-            mmsi=366123462,
-            vessel_name="ON THE ROCKS",
-            ship_type=AISVessel.SHIP_TYPES["CARGO"],
-            position={"lat": "37° 40.9575' N", "lon": "122° 22.7460' W"},
-            navigation_status=AISVessel.NAV_STATUS["AGROUND"],
-            speed=0.0,
-        ),
-        AISVessel(
-            mmsi=366123463,
-            vessel_name="FISHING MASTER",
-            ship_type=AISVessel.SHIP_TYPES["FISHING"],
-            position={"lat": "37° 41.0575' N", "lon": "122° 22.8460' W"},
-            navigation_status=AISVessel.NAV_STATUS["FISHING"],
-            speed=8.0,
-            course=80.0,
-        ),
-        AISVessel(
-            mmsi=366123464,
-            vessel_name="WIND WALKER",
-            ship_type=AISVessel.SHIP_TYPES["SAILING"],
-            position={"lat": "37° 40.3775' N", "lon": "122° 22.1460' W"},
-            navigation_status=AISVessel.NAV_STATUS["UNDERWAY_SAILING"],
-            speed=6.0,
-        ),
+        create_ais_vessel(vessel_config)
+        for vessel_config in config.get('ais_vessels', [])
     ]
+
+    # Parse speed profile
+    speed_profile = parse_speed_profile(config['speed_profile'])
 
     logging.info("Starting simulation...")
     simulator.simulate(
-        waypoints=waypoints,
+        waypoints=config['waypoints'],
         speed_profile=speed_profile,
-        duration_seconds=None,
-        update_rate=1,  # Update every second
-        wind_direction=270,  # Wind coming from the west
-        wind_speed=15.0,  # 15 knots of wind
+        duration_seconds=config.get('duration_seconds'),
+        update_rate=config.get('update_rate', 1),
+        wind_direction=config.get('wind_direction', 0),
+        wind_speed=config.get('wind_speed', 0),
         ais_vessels=ais_vessels,
     )
-
 
 if __name__ == "__main__":
     main()
