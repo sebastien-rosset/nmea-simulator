@@ -7,9 +7,9 @@ protocol: "0183"
 loglevel: "INFO"
 
 # NMEA sentence configuration
-exclude_sentences:
-  - "RSA"
-  - "MWD"
+#exclude_sentences:
+#  - "RSA"
+#  - "MWD"
 
 # Navigation configuration
 waypoints:
