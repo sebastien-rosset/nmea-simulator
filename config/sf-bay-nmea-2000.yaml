@@ -1,0 +1,128 @@
+# Network configuration
+host: "127.0.0.1"
+port: 10110
+protocol: "2000"
+
+# Logging configuration
+loglevel: "INFO"
+
+# NMEA sentence configuration
+#exclude_sentences:
+#  - "RSA"
+#  - "MWD"
+
+# Navigation configuration
+waypoints:
+  - lat: "37° 40.3574' N"
+    lon: "122° 22.1457' W"
+  - lat: "37° 43.4444' N"
+    lon: "122° 20.7058' W"
+  - lat: "37° 48.0941' N"
+    lon: "122° 22.7372' W"
+  - lat: "37° 49.1258' N"
+    lon: "122° 25.2814' W"
+
+# Speed profile (duration in minutes 'm' or seconds 's')
+speed_profile:
+  - duration: "1m"
+    speed: 8.0
+  - duration: "4m"
+    speed: 0.1
+  - duration: "15m"
+    speed: 10.0
+  - duration: null  # Continue at this speed until end
+    speed: 8.0
+
+# Environmental conditions
+wind_direction: 270  # Wind coming from the west
+wind_speed: 15.0    # 15 knots of wind
+
+# Simulation parameters
+update_rate: 1      # Update every second
+duration_seconds: null  # Run indefinitely
+
+# AIS vessel configurations
+ais_vessels:
+  - mmsi: 366123456
+    vessel_name: "BAY TRADER"
+    ship_type: "CARGO"
+    position:
+      lat: "37° 40.3575' N"
+      lon: "122° 22.1460' W"
+    navigation_status: "UNDERWAY_ENGINE"
+    speed: 12.0
+    course: 50.0
+
+  - mmsi: 366123457
+    vessel_name: "ANCHOR QUEEN"
+    ship_type: "TANKER"
+    position:
+      lat: "37° 40.4575' N"
+      lon: "122° 22.2460' W"
+    navigation_status: "AT_ANCHOR"
+    speed: 0.0
+
+  - mmsi: 366123458
+    vessel_name: "DISABLED LADY"
+    ship_type: "CARGO"
+    position:
+      lat: "37° 40.5575' N"
+      lon: "122° 22.3460' W"
+    navigation_status: "NOT_UNDER_COMMAND"
+    speed: 0.1
+
+  - mmsi: 366123459
+    vessel_name: "DREDGER ONE"
+    ship_type: "DREDGER"
+    position:
+      lat: "37° 40.6575' N"
+      lon: "122° 22.4460' W"
+    navigation_status: "RESTRICTED_MANEUVER"
+    speed: 3.0
+
+  - mmsi: 366123460
+    vessel_name: "DEEP DRAFT"
+    ship_type: "TANKER"
+    draft: 15.5
+    position:
+      lat: "37° 40.7575' N"
+      lon: "122° 22.5460' W"
+    navigation_status: "CONSTRAINED_DRAFT"
+    speed: 15.0
+
+  - mmsi: 366123461
+    vessel_name: "PIER SIDE"
+    ship_type: "CARGO"
+    position:
+      lat: "37° 40.8575' N"
+      lon: "122° 22.6460' W"
+    navigation_status: "MOORED"
+    speed: 0.0
+
+  - mmsi: 366123462
+    vessel_name: "ON THE ROCKS"
+    ship_type: "CARGO"
+    position:
+      lat: "37° 40.9575' N"
+      lon: "122° 22.7460' W"
+    navigation_status: "AGROUND"
+    speed: 0.0
+
+  - mmsi: 366123463
+    vessel_name: "FISHING MASTER"
+    ship_type: "FISHING"
+    position:
+      lat: "37° 41.0575' N"
+      lon: "122° 22.8460' W"
+    navigation_status: "FISHING"
+    speed: 8.0
+    course: 80.0
+
+  - mmsi: 366123464
+    vessel_name: "WIND WALKER"
+    ship_type: "SAILING"
+    position:
+      lat: "37° 40.3775' N"
+      lon: "122° 22.1460' W"
+    navigation_status: "UNDERWAY_SAILING"
+    speed: 6.0

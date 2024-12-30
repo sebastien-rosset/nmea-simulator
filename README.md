@@ -35,10 +35,10 @@ This project uses Poetry for dependency management. To install:
 
 - Python 3.12 or higher
 - Dependencies (automatically installed by Poetry):
-  - bitstring 4.2.3
-  - numpy 2.1.3
+  - bitstring
+  - numpy
   - tkinter
-  - PyYAML 6.0.2
+  - PyYAML
 
 ## Usage
 
@@ -56,7 +56,8 @@ This project uses Poetry for dependency management. To install:
 
 The simulator can be configured using YAML files in the `config` directory. Example configuration:
 
-1. [sf-bay.yaml](config/sf-bay.yaml)
+1. [sf-bay-nmea-0183.yaml](config/sf-bay-nmea-0183.yaml)
+2. [sf-bay-nmea-2000.yaml](config/sf-bay-nmea-2000.yaml)
 
 ## Project Structure
 
