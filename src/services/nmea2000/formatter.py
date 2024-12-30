@@ -90,29 +90,13 @@ class NMEA2000Formatter:
 
     def _format_2000_message(self, message: NMEA2000Message) -> bytes:
         """
-        Format a complete NMEA 2000 message for UDP transmission.
-        Handles both single frame and Fast Packet Protocol for messages > 8 bytes.
-
-        Frame Format (39 bits total header):
-        Bit 1:     SOF (0)
-        Bits 2-4:  Priority (3 bits)
-        Bits 5-6:  Reserved (00)
-        Bits 7-14: PDU Format (8 bits)
-        Bits 15-22: PDU Specific (8 bits)
-        Bits 23-30: Source Address (8 bits)
-        Bit 31:    RTR (0)
-        Bits 32-33: r1,r0 (00)
-        Bits 34-37: DLC
-        Followed by data bytes
+        Format a complete NMEA 2000 message for CAN frame transmission.
 
         Args:
             message: NMEA2000Message containing PGN, priority, addresses and data
 
         Returns:
-            bytes: Complete frame including all protocol bits
-
-        Raises:
-            ValueError: If any field is outside valid range
+            bytes: Complete frame in CAN format
         """
         try:
             # Validate ranges
@@ -156,7 +140,8 @@ class NMEA2000Formatter:
         self, priority: int, pf: int, ps: int, source: int, data: bytes
     ) -> bytes:
         """
-        Format a single frame NMEA 2000 message with correct PGN and CAN ID construction.
+        Format a single frame NMEA 2000 message with correct CAN ID construction.
+        Modified to match OpenCPN's expected format.
 
         Args:
             priority: Message priority (0-7)
@@ -168,16 +153,9 @@ class NMEA2000Formatter:
         Returns:
             bytes: Complete CAN frame
         """
-        # Correctly reconstruct the PGN based on NMEA 2000 specification
-        if pf < 240:  # PDU1 format
-            pgn = pf << 8  # Only upper byte, lower byte is destination
-        else:  # PDU2 format
-            pgn = (pf << 8) | ps
-
         # Construct CAN ID using the NMEA 2000 / ISO 11783 specification
         can_id = (
             (priority & 0x7) << 26  # Priority (3 bits)
-            | (0 & 0x3) << 24  # Reserved bits
             | (pf & 0xFF) << 16  # PDU Format (8 bits)
             | (ps & 0xFF) << 8  # PDU Specific (8 bits)
             | (source & 0xFF)  # Source Address (8 bits)
@@ -185,8 +163,8 @@ class NMEA2000Formatter:
 
         frame = bytearray()
 
-        # Add CAN ID using correct byte order for network transmission
-        frame.extend(can_id.to_bytes(4, "big"))
+        # Add CAN ID using little-endian byte order (changed from big-endian)
+        frame.extend(can_id.to_bytes(4, "little"))
 
         # Add length byte
         frame.append(len(data))
@@ -196,8 +174,7 @@ class NMEA2000Formatter:
 
         # Enhanced debug logging
         logging.debug(f"CAN Frame Construction Details:")
-        logging.debug(f"  Original PGN: {pgn}")
-        logging.debug(f"  Reconstructed CAN ID: {hex(can_id)}")
+        logging.debug(f"  CAN ID: {hex(can_id)}")
         logging.debug(f"  Priority: {priority}")
         logging.debug(f"  PDU Format (PF): {pf}")
         logging.debug(f"  PDU Specific (PS): {ps}")
@@ -211,9 +188,6 @@ class NMEA2000Formatter:
         self, priority: int, pf: int, ps: int, source: int, data: bytes
     ) -> bytes:
         """Format a Fast Packet Protocol message (for messages > 8 bytes)"""
-        # Calculate PGN correctly
-        pgn = (pf << 8) | ps if pf >= 240 else (pf << 8)
-
         frames = []
         total_length = len(data)
         sequence = 0  # Sequence counter for this message
