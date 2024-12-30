@@ -9,8 +9,16 @@ from .pgns import PGN
 class NMEA2000Formatter:
     """Formats messages according to NMEA 2000 standard"""
 
-    def __init__(self):
+    def __init__(self, output_format="YD_RAW"):
+        """
+        Initialize formatter with specified output format.
+
+        Args:
+            output_format: One of "YD_RAW", "ACTISENSE_N2K_ASCII", or "MINIPLEX"
+        """
         self.converter = NMEA2000Converter()
+        self.output_format = output_format
+        self._order = 0  # For fast packet sequence counter
 
     def format_message(self, message: Union[str, NMEA2000Message]) -> bytes:
         """Format NMEA 2000 message"""

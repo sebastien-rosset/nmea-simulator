@@ -79,6 +79,12 @@ def main():
     parser.add_argument(
         "--protocol", choices=["0183", "2000"], help="Override NMEA protocol version"
     )
+    parser.add_argument(
+        "--n2k-format",
+        choices=["YD_RAW", "ACTISENSE_N2K_ASCII", "MINIPLEX"],
+        default="YD_RAW",
+        help="NMEA 2000 output format (only used when protocol is 2000)",
+    )
     parser.add_argument("--host", help="Override host address for UDP messages")
     parser.add_argument(
         "--port", type=int, help="Override port number for UDP messages"
@@ -103,6 +109,8 @@ def main():
         config["port"] = args.port
     if args.loglevel:
         config["loglevel"] = args.loglevel
+    if args.n2k_format:
+        config["n2k_format"] = args.n2k_format
 
     # Set up logging
     logging.basicConfig(
@@ -115,6 +123,7 @@ def main():
         host=config.get("host", "127.0.0.1"),
         port=config.get("port", 10110),
         protocol=config.get("protocol", "0183"),
+        n2k_format=config.get("n2k_format", "YD_RAW"),
         exclude_sentences=config.get("exclude_sentences"),
     )
 

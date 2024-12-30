@@ -63,6 +63,7 @@ class MessageService:
         host: str = "127.0.0.1",
         port: int = 10110,
         version: NMEAVersion = NMEAVersion.NMEA_0183,
+        n2k_format: str = "YD_RAW",
         exclude_sentences: List[str] = None,
     ):
         """
@@ -86,6 +87,9 @@ class MessageService:
                     - NMEA 0183: ASCII strings with checksum
                     - NMEA 2000: Binary CAN frames
 
+            n2k_format: NMEA 2000 output format (only used when protocol is 2000).
+                Options are "YD_RAW", "ACTISENSE_N2K_ASCII", or "MINIPLEX".
+
             excluded_sentences: List of NMEA 0183 sentence types to exclude from sending.
 
         Creates:
@@ -104,7 +108,7 @@ class MessageService:
         self.formatter = (
             NMEA0183Formatter()
             if version == NMEAVersion.NMEA_0183
-            else NMEA2000Formatter()
+            else NMEA2000Formatter(output_format=n2k_format)
         )
         # All possible sentence types
         self.all_sentence_types = [

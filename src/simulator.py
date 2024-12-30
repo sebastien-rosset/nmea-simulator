@@ -26,6 +26,7 @@ class BasicNavSimulator:
         host="127.0.0.1",
         port=10110,
         protocol: Literal["0183", "2000"] = "0183",
+        n2k_format: str = "YD_RAW",
         exclude_sentences: Optional[List[str]] = None,
     ):
         """
@@ -35,6 +36,8 @@ class BasicNavSimulator:
             host: Host address for UDP messages
             port: Port number for UDP messages
             protocol: NMEA protocol version ("0183" or "2000")
+            n2k_format: NMEA 2000 output format ("YD_RAW", "ACTISENSE_N2K_ASCII", or "MINIPLEX")
+            exclude_sentences: Optional list of NMEA sentence types to exclude
         """
 
         nmea_version = (
@@ -42,7 +45,11 @@ class BasicNavSimulator:
         )
         # Initialize managers and services
         self.message_service = MessageService(
-            host, port, version=nmea_version, exclude_sentences=exclude_sentences
+            host,
+            port,
+            version=nmea_version,
+            n2k_format=n2k_format,
+            exclude_sentences=exclude_sentences,
         )
         self.route_manager = RouteManager()
         self.speed_manager = SpeedManager()
