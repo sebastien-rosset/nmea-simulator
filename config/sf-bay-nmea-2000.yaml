@@ -2,7 +2,7 @@
 host: "127.0.0.1"
 port: 10110
 protocol: "2000"
-n2k_format: "YD_RAW"  # or "ACTISENSE_N2K_ASCII" or "MINIPLEX"
+n2k_format: "ACTISENSE_RAW_ASCII"
 
 # Logging configuration
 loglevel: "INFO"

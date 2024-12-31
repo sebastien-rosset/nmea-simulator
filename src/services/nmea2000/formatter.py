@@ -5,20 +5,27 @@ from .converter import NMEA2000Converter
 from .verifier import verify_pgn_conversion
 from .pgns import PGN
 
+N2K_ACTISENSE_RAW_ASCII = "ACTISENSE_RAW_ASCII"  # aka YD_RAW https://www.yachtd.com/downloads/ydnr02.pdf appendix E
+N2K_ACTISENSE_N2K_ASCII = "ACTISENSE_N2K_ASCII"
+N2K_SEASMART = "SEASMART"
+N2K_MINIPLEX = "MINIPLEX"
+N2K_CAN = "CAN"
+
 
 class NMEA2000Formatter:
     """Formats messages according to NMEA 2000 standard"""
 
-    def __init__(self, output_format="YD_RAW"):
+    def __init__(self, output_format=None):
         """
         Initialize formatter with specified output format.
 
         Args:
-            output_format: One of "YD_RAW", "ACTISENSE_N2K_ASCII", or "MINIPLEX"
+            output_format: One of "ACTISENSE_RAW_ASCII", "ACTISENSE_N2K_ASCII", or "MINIPLEX"
         """
         self.converter = NMEA2000Converter()
+        if output_format is None:
+            output_format = N2K_ACTISENSE_RAW_ASCII
         self.output_format = output_format
-        self._order = 0  # For fast packet sequence counter
 
     def format_message(self, message: Union[str, NMEA2000Message]) -> bytes:
         """Format NMEA 2000 message"""
@@ -29,17 +36,19 @@ class NMEA2000Formatter:
         # Then format according to the output format
         if not nmea2000_msg:
             return b""
-        if self.output_format == "YD_RAW":
-            return self._format_yd_raw(
+        if self.output_format == N2K_ACTISENSE_RAW_ASCII:
+            return self._format_actisense_raw_ascii(
                 nmea2000_msg.priority,
                 nmea2000_msg.pgn,
                 nmea2000_msg.source,
                 nmea2000_msg.data,
             )
-        else:
+        elif self.output_format == N2K_CAN:
             return self._format_2000_message(nmea2000_msg)
+        else:
+            raise ValueError(f"Unsupported output format: {self.output_format}")
 
-    def _format_yd_raw(
+    def _format_actisense_raw_ascii(
         self, priority: int, pgn: int, source: int, data: bytes
     ) -> bytes:
         """

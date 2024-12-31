@@ -26,7 +26,7 @@ class BasicNavSimulator:
         host="127.0.0.1",
         port=10110,
         protocol: Literal["0183", "2000"] = "0183",
-        n2k_format: str = "YD_RAW",
+        n2k_format: str = None,
         exclude_sentences: Optional[List[str]] = None,
     ):
         """
@@ -36,7 +36,7 @@ class BasicNavSimulator:
             host: Host address for UDP messages
             port: Port number for UDP messages
             protocol: NMEA protocol version ("0183" or "2000")
-            n2k_format: NMEA 2000 output format ("YD_RAW", "ACTISENSE_N2K_ASCII", or "MINIPLEX")
+            n2k_format: NMEA 2000 output format
             exclude_sentences: Optional list of NMEA sentence types to exclude
         """
 
