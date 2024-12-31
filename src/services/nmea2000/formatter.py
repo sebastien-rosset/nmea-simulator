@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Union, Optional
+from typing import List, Union, Optional
 from .messages import NMEA2000Message
 from .converter import NMEA2000Converter
 from .verifier import verify_pgn_conversion
@@ -33,15 +33,31 @@ class NMEA2000Formatter:
             output_format = N2K_ACTISENSE_RAW_ASCII
         self.output_format = output_format
 
-    def format_message(self, message: Union[str, NMEA2000Message]) -> bytes:
+    def format_message(
+        self, message: Union[str, NMEA2000Message, List[NMEA2000Message]]
+    ) -> bytes:
         """Format NMEA 2000 message"""
         if isinstance(message, str):
             nmea2000_msg = self._convert_0183_to_2000(message)
         else:
             nmea2000_msg = message
-        # Then format according to the output format
+
+        # Return empty if no message
         if not nmea2000_msg:
             return b""
+
+        # Handle single message
+        if isinstance(nmea2000_msg, NMEA2000Message):
+            return self._format_single_message(nmea2000_msg)
+
+        # Handle list of messages
+        if isinstance(nmea2000_msg, list):
+            return b"".join(self._format_single_message(msg) for msg in nmea2000_msg)
+
+        raise ValueError(f"Unexpected message type: {type(nmea2000_msg)}")
+
+    def _format_single_message(self, nmea2000_msg: NMEA2000Message) -> bytes:
+        """Format a single NMEA 2000 message"""
         if self.output_format == N2K_ACTISENSE_RAW_ASCII:
             return self.convert_to_actisense_raw_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
@@ -114,7 +130,7 @@ class NMEA2000Formatter:
             + "\r\n"
         )
 
-        logging.debug(f"Formatted N2K message: {message.strip()}")
+        logging.debug(f"Formatted N2K message in hex: {message.encode('ascii').hex()}")
         return message.encode("ascii")
 
     def convert_to_actisense_n2k_ascii(
@@ -211,10 +227,9 @@ class NMEA2000Formatter:
                 if isinstance(result, list):
                     for nmea2000_msg in result:
                         verify_pgn_conversion(message, nmea2000_msg)
-                    return result[0] if result else None
                 else:
                     verify_pgn_conversion(message, result)
-                    return result
+                return result
             else:
                 if msg_type:
                     logging.error(f"Ignoring unsupported message type: {msg_type}")

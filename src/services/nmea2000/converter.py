@@ -1,4 +1,5 @@
 # src/services/nmea2000/converter.py
+import math
 import struct
 from datetime import datetime
 import logging
@@ -133,20 +134,20 @@ class NMEA2000Converter:
             )
 
             # COG & SOG, Rapid Update (PGN 129026)
-            # Convert speed to unsigned value (in 1/100th knot)
-            sog_int = int(
-                max(0, min(sog * 100, 65535))
-            )  # Clamp to 16-bit unsigned range
+            # Convert COG to radians (NMEA 2000 PGN 129026 uses radians)
+            cog_rad = (cog * math.pi / 180.0) % (2 * math.pi)
+            cog_int = int(cog_rad * 10000)  # Scale to 1/10000th radian
 
-            # Convert course to unsigned value (in 1/10000th degree)
-            cog_int = int((cog * 10000) % 65536)  # Wrap to 16-bit unsigned range
+            # Convert SOG from knots to 1/100th m/s
+            # 1 knot = 0.514444 m/s
+            sog_ms100 = int(sog * 0.514444 * 100)  # Scale to 0.01 m/s
 
             cog_sog_data = struct.pack(
-                "<BBHH",  # Use unsigned short for both values
+                "<BBHH",
                 0xFF,  # SID (not used)
                 0,  # COG Reference (0 = True)
-                cog_int,  # COG in 1/10000th degree
-                sog_int,  # SOG in 1/100th knot
+                cog_int,  # COG in 1/10000th radian
+                sog_ms100,  # SOG in 0.01 m/s
             )
             cog_sog_msg = NMEA2000Message(
                 pgn=PGN.COG_SOG_RAPID,
@@ -156,9 +157,9 @@ class NMEA2000Converter:
                 data=cog_sog_data,
             )
             messages.append(cog_sog_msg)
-            logging.debug(
-                f"Created COG/SOG message: PGN={PGN.COG_SOG_RAPID}, data={cog_sog_data.hex()}"
-            )
+            logging.debug(f"COG: {cog}° -> {cog_rad:.4f} rad -> {cog_int} (scaled)")
+            logging.debug(f"SOG: {sog} knots -> {sog_cms} cm/s")
+            logging.debug(f"COG/SOG raw data: {cog_sog_data.hex()}")
 
             return messages
 
