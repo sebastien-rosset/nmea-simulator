@@ -5,11 +5,16 @@ from .converter import NMEA2000Converter
 from .verifier import verify_pgn_conversion
 from .pgns import PGN
 
-N2K_ACTISENSE_RAW_ASCII = "ACTISENSE_RAW_ASCII"  # aka YD_RAW https://www.yachtd.com/downloads/ydnr02.pdf appendix E
+# See OpenCPN/model/src/comm_drv_n2k_net.cpp
+# CommDriverN2KNet::OnSocketEvent() for details
+N2K_YD_RAW = "YD_RAW"  # RX Byte compatible with Actisense ASCII RAW
+N2K_ACTISENSE_RAW_ASCII = "ACTISENSE_RAW_ASCII"
 N2K_ACTISENSE_N2K_ASCII = "ACTISENSE_N2K_ASCII"
+N2K_ACTISENSE_N2K = "ACTISENSE_N2K"
+N2K_ACTISENSE_RAW = "ACTISENSE_RAW"
+N2K_ACTISENSE_NGT = "ACTISENSE_NGT"
 N2K_SEASMART = "SEASMART"
 N2K_MINIPLEX = "MINIPLEX"
-N2K_CAN = "CAN"
 
 
 class NMEA2000Formatter:
@@ -37,62 +42,51 @@ class NMEA2000Formatter:
         if not nmea2000_msg:
             return b""
         if self.output_format == N2K_ACTISENSE_RAW_ASCII:
-            return self._format_actisense_raw_ascii(
-                nmea2000_msg.priority,
-                nmea2000_msg.pgn,
-                nmea2000_msg.source,
-                nmea2000_msg.data,
+            return self.convert_to_actisense_raw_ascii(
+                nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
             )
-        elif self.output_format == N2K_CAN:
-            return self._format_2000_message(nmea2000_msg)
+        elif self.output_format == N2K_ACTISENSE_N2K_ASCII:
+            raise NotImplementedError("ACTISENSE_N2K_ASCII format not yet supported")
+        elif self.output_format == N2K_ACTISENSE_N2K:
+            raise NotImplementedError("ACTISENSE_N2K format not yet supported")
+        elif self.output_format == N2K_ACTISENSE_NGT:
+            raise NotImplementedError("ACTISENSE_NGT format not yet supported")
+        elif self.output_format == N2K_SEASMART:
+            raise NotImplementedError("SEASMART format not yet supported")
+        elif self.output_format == N2K_MINIPLEX:
+            raise NotImplementedError("MINIPLEX format not yet supported")
+        elif self.output_format == N2K_YD_RAW:
+            raise NotImplementedError("YD_RAW format not yet supported")
         else:
             raise ValueError(f"Unsupported output format: {self.output_format}")
 
-    def _format_actisense_raw_ascii(
-        self, priority: int, pgn: int, source: int, data: bytes
-    ) -> bytes:
+    def convert_to_actisense_raw_ascii(self, pgn, source, data) -> bytes:
         """
-        Format message in YD RAW format
-        Format: <timestamp> R <canid> <data bytes>
-        Example: 12:35:45.123 R 0FF0103 01 C4 F6 E7 00 B4 23 55
+        Convert CAN frame to Actisense RAW ASCII format
+
+        Args:
+        - pgn: Parameter Group Number
+        - source: Source address of the device
+        - data: List of bytes representing the message payload
+
+        Returns:
+        Formatted Actisense RAW ASCII message with checksum
         """
-        from datetime import datetime
+        # Convert data to hex string
+        data_hex = "".join([f"{byte:02X}" for byte in data])
 
-        # Extract PDU Format and Specific
-        pf = (pgn >> 8) & 0xFF
-        ps = pgn & 0xFF
+        # Construct the base message
+        # Format: $PACTS,PGN:priority,source,len,data*checksum
+        # Using default priority of 3 (can be adjusted if needed)
+        message = f"$PACTS,{pgn}:3,{source},{len(data)},{data_hex}"
 
-        # In OpenCPN:
-        # unsigned long can_id = BuildCanID(6, 0xff, 0xff, pgn);
-        # Which expands to:
-        # Build 29-bit ID according to ISO 11783:
-        # * Bit 0-7  Source Address     (8 bits)
-        # * Bit 8-15 PDU Specific (PS)  (8 bits)
-        # * Bit 16-23 PDU Format (PF)   (8 bits)
-        # * Bit 24-26 Priority          (3 bits)
-        # * Bit 27-28 Reserved bit == 0 (2 bits)
-        # * Bit 28 Data Page == 0       (1 bit)
-        # Construct CAN ID
-        can_id = (
-            (priority & 0x7) << 26  # Priority (3 bits)
-            | pf << 16  # PDU Format (8 bits)
-            | ps << 8  # PDU Specific (8 bits)
-            | source  # Source Address (8 bits)
-        )
+        # Calculate checksum (XOR of all characters after '$')
+        checksum = 0
+        for char in message[1:]:
+            checksum ^= ord(char)
 
-        # Format timestamp
-        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-
-        # Format CAN ID as hex
-        can_id_hex = f"{can_id:08X}"
-
-        # Format data bytes as hex
-        data_hex = " ".join([f"{b:02X}" for b in data])
-
-        # Construct complete message
-        msg = f"{timestamp} R {can_id_hex} {data_hex}\r\n"
-
-        return msg.encode()
+        # Add checksum to the message
+        return f"{message}*{checksum:02X}".encode()
 
     def _get_message_type(self, message: str) -> str:
         """Extract message type without talker ID from NMEA 0183 message"""
