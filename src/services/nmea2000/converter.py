@@ -158,7 +158,7 @@ class NMEA2000Converter:
             )
             messages.append(cog_sog_msg)
             logging.debug(f"COG: {cog}° -> {cog_rad:.4f} rad -> {cog_int} (scaled)")
-            logging.debug(f"SOG: {sog} knots -> {sog_cms} cm/s")
+            logging.debug(f"SOG: {sog} knots -> {sog_ms100} 0.01 m/s")
             logging.debug(f"COG/SOG raw data: {cog_sog_data.hex()}")
 
             return messages
@@ -283,14 +283,25 @@ class NMEA2000Converter:
             # Use meters field
             depth = float(fields[3]) if fields[3] else 0.0
 
-            # Pack depth data
-            data = struct.pack(
-                "<BLhH",
-                0xFF,  # SID (not used)
-                int(depth * 100),  # Depth in centimeters
-                0,  # Offset (0 = depth below transducer)
-                0xFFFF,  # Maximum range scale (not used)
+            # Convert to 0.01m units
+            depth_value = int(depth * 100)
+
+            # Pack bytes manually to ensure correct order
+            data = bytes(
+                [
+                    0xFF,  # SID
+                    0x00,  # Source type
+                    depth_value & 0xFF,  # Depth byte 0
+                    (depth_value >> 8) & 0xFF,  # Depth byte 1
+                    (depth_value >> 16) & 0xFF,  # Depth byte 2
+                    (depth_value >> 24) & 0xFF,  # Depth byte 3
+                    0x00,  # Offset LSB
+                    0x00,  # Offset MSB
+                ]
             )
+
+            logging.debug(f"Converting depth {depth}m to raw value {depth_value}")
+            logging.debug(f"Raw data bytes: {' '.join([f'{b:02X}' for b in data])}")
 
             return NMEA2000Message(
                 pgn=PGN.WATER_DEPTH, priority=3, source=0, destination=255, data=data
