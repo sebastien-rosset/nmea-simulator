@@ -1,6 +1,7 @@
 # src/services/nmea2000/converter.py
 import struct
 from datetime import datetime
+import logging
 from typing import List, Optional
 from math import floor
 
@@ -53,8 +54,10 @@ class NMEA2000Converter:
     def convert_rmc_to_2000(self, message: str) -> List[NMEA2000Message]:
         """Convert RMC message to NMEA 2000 messages."""
         messages = []
+        logging.debug(f"Converting RMC message: {message}")
         fields = message.split(",")
         if len(fields) < 12:
+            logging.warning(f"RMC message has insufficient fields: {len(fields)}")
             return messages
 
         try:
@@ -99,7 +102,9 @@ class NMEA2000Converter:
                 msecs,  # Milliseconds since midnight
                 0,  # Reserved
             )
-
+            logging.debug(
+                f"System Time data: {year}-{month}-{day} {hour}:{minute}:{second}. SOG={sog}kts, COG={cog}°. position: lat={lat}, lon={lon}"
+            )
             messages.append(
                 NMEA2000Message(
                     pgn=PGN.SYSTEM_TIME,
@@ -143,15 +148,16 @@ class NMEA2000Converter:
                 cog_int,  # COG in 1/10000th degree
                 sog_int,  # SOG in 1/100th knot
             )
-
-            messages.append(
-                NMEA2000Message(
-                    pgn=PGN.COG_SOG_RAPID,
-                    priority=2,
-                    source=0,
-                    destination=255,
-                    data=cog_sog_data,
-                )
+            cog_sog_msg = NMEA2000Message(
+                pgn=PGN.COG_SOG_RAPID,
+                priority=2,
+                source=0,
+                destination=255,
+                data=cog_sog_data,
+            )
+            messages.append(cog_sog_msg)
+            logging.debug(
+                f"Created COG/SOG message: PGN={PGN.COG_SOG_RAPID}, data={cog_sog_data.hex()}"
             )
 
             return messages

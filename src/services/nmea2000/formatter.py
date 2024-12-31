@@ -1,5 +1,5 @@
 import logging
-from typing import Union
+from typing import Union, Optional
 from .messages import NMEA2000Message
 from .converter import NMEA2000Converter
 from .verifier import verify_pgn_conversion
@@ -23,9 +23,67 @@ class NMEA2000Formatter:
     def format_message(self, message: Union[str, NMEA2000Message]) -> bytes:
         """Format NMEA 2000 message"""
         if isinstance(message, str):
-            return self._convert_0183_to_2000(message)
+            nmea2000_msg = self._convert_0183_to_2000(message)
         else:
-            return self._format_2000_message(message)
+            nmea2000_msg = message
+        # Then format according to the output format
+        if not nmea2000_msg:
+            return b""
+        if self.output_format == "YD_RAW":
+            return self._format_yd_raw(
+                nmea2000_msg.priority,
+                nmea2000_msg.pgn,
+                nmea2000_msg.source,
+                nmea2000_msg.data,
+            )
+        else:
+            return self._format_2000_message(nmea2000_msg)
+
+    def _format_yd_raw(
+        self, priority: int, pgn: int, source: int, data: bytes
+    ) -> bytes:
+        """
+        Format message in YD RAW format
+        Format: <timestamp> R <canid> <data bytes>
+        Example: 12:35:45.123 R 0FF0103 01 C4 F6 E7 00 B4 23 55
+        """
+        from datetime import datetime
+
+        # Extract PDU Format and Specific
+        pf = (pgn >> 8) & 0xFF
+        ps = pgn & 0xFF
+
+        # In OpenCPN:
+        # unsigned long can_id = BuildCanID(6, 0xff, 0xff, pgn);
+        # Which expands to:
+        # Build 29-bit ID according to ISO 11783:
+        # * Bit 0-7  Source Address     (8 bits)
+        # * Bit 8-15 PDU Specific (PS)  (8 bits)
+        # * Bit 16-23 PDU Format (PF)   (8 bits)
+        # * Bit 24-26 Priority          (3 bits)
+        # * Bit 27-28 Reserved bit == 0 (2 bits)
+        # * Bit 28 Data Page == 0       (1 bit)
+        # Construct CAN ID
+        can_id = (
+            (priority & 0x7) << 26  # Priority (3 bits)
+            | pf << 16  # PDU Format (8 bits)
+            | ps << 8  # PDU Specific (8 bits)
+            | source  # Source Address (8 bits)
+        )
+
+        # Format timestamp
+        timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+
+        # Format CAN ID as hex
+        can_id_hex = f"{can_id:08X}"
+
+        # Format data bytes as hex
+        data_hex = " ".join([f"{b:02X}" for b in data])
+
+        # Construct complete message
+        msg = f"{timestamp} R {can_id_hex} {data_hex}\r\n"
+
+        return msg.encode()
 
     def _get_message_type(self, message: str) -> str:
         """Extract message type without talker ID from NMEA 0183 message"""
@@ -44,7 +102,7 @@ class NMEA2000Formatter:
 
         return ""
 
-    def _convert_0183_to_2000(self, message: str) -> bytes:
+    def _convert_0183_to_2000(self, message: str) -> Optional[NMEA2000Message]:
         """Convert NMEA 0183 message to NMEA 2000 format"""
         try:
             msg_type = self._get_message_type(message)
@@ -83,18 +141,18 @@ class NMEA2000Formatter:
                 if isinstance(result, list):
                     for nmea2000_msg in result:
                         verify_pgn_conversion(message, nmea2000_msg)
-                    return self._format_2000_message(result[0]) if result else b""
+                    return result[0] if result else None
                 else:
                     verify_pgn_conversion(message, result)
-                    return self._format_2000_message(result) if result else b""
+                    return result
             else:
                 if msg_type:
                     logging.error(f"Ignoring unsupported message type: {msg_type}")
-                return b""
+                return None
 
         except Exception as e:
             logging.error(f"Error converting message {message}: {str(e)}")
-            return b""
+            return None
 
     def _format_2000_message(self, message: NMEA2000Message) -> bytes:
         """

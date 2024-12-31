@@ -164,10 +164,12 @@ class MessageService:
             formatted_message = self.formatter.format_message(message)
 
             if self.version == NMEAVersion.NMEA_2000:
-                if isinstance(message, str):
-                    # NMEA 0183 sentence has been converted to NMEA 2000 message.
-                    data = formatted_message  # Already in bytes for 2000
-                elif isinstance(message, NMEA2000Message):
+                if self.formatter.output_format == "YD_RAW":
+                    # For YD_RAW, just encode and send the ASCII string
+                    data = formatted_message
+                    log_message = formatted_message.decode("ascii").strip()
+                else:
+                    # Handle binary CAN frame formats
                     data = formatted_message
                     if isinstance(message, NMEA2000Message):
                         # Log detailed NMEA 2000 message information
@@ -178,8 +180,15 @@ class MessageService:
                         logging.debug(f"  Destination: {message.destination}")
                         logging.debug(f"  Data Length: {len(message.data)}")
                         logging.debug(f"  Data Hex: {message.data.hex()}")
-                else:
-                    raise ValueError(f"Unsupported message type: {type(message)}")
+
+                    verifier = MessageVerifier()
+                    frame_info = verifier.verify_can_frame(data)
+                    log_message = (
+                        f"Sending PGN {frame_info['pgn']} "
+                        f"({PGN.get_description(frame_info['pgn'])}) Raw bytes: {data.hex()}"
+                    )
+                    if isinstance(message, str):
+                        log_message += f" Converted from {message.strip()}"
             elif self.version == NMEAVersion.NMEA_0183:
                 if isinstance(message, str):
                     # Regular NMEA 0183 message
@@ -190,20 +199,14 @@ class MessageService:
             else:
                 raise ValueError(f"Unsupported NMEA version: {self.version}")
 
-            if self.version == NMEAVersion.NMEA_2000:
-                # Additional verification before sending
-                verifier = MessageVerifier()
-                frame_info = verifier.verify_can_frame(data)
-                log_message = f"Sending PGN {frame_info['pgn']} ({PGN.get_description(frame_info['pgn'])}) Raw bytes: {data.hex()}"
-                # Show original NMEA 0183 message and what it's being converted to.
-                if isinstance(message, str):
-                    log_message += f" Converted from {message.strip()}"
-
             send = True
             if isinstance(message, str):
                 send = self._should_send_sentence(message)
             if send:
+                if isinstance(data, str):
+                    data = data.encode()
                 self.sock.sendto(data, (self.host, self.port))
+
             logging.debug(
                 f"{"Send" if send else "Skip"} NMEA: {self.version.value}: {log_message}"
             )

@@ -13,8 +13,14 @@ class MessageVerifier:
         if len(frame) < 5:
             raise ValueError(f"Frame too short: {len(frame)} bytes")
 
-        # Get CAN ID from first 4 bytes (big endian)
-        can_id = int.from_bytes(frame[0:4], "big")
+        # Get CAN ID from first 4 bytes
+        can_id = int.from_bytes(frame[0:4], byteorder="little")
+        can_id = (
+            ((can_id & 0xFF) << 24)
+            | ((can_id & 0xFF00) << 8)
+            | ((can_id & 0xFF0000) >> 8)
+            | ((can_id & 0xFF000000) >> 24)
+        )
 
         # Extract fields from CAN ID
         priority = (can_id >> 26) & 0x7
@@ -27,6 +33,9 @@ class MessageVerifier:
             pgn = pf << 8
         else:  # PDU2 format
             pgn = (pf << 8) | ps
+
+        # Add the PGN page/reserved bits
+        pgn |= ((can_id >> 24) & 0x3) << 16
 
         # Get data length and payload
         length = frame[4]
