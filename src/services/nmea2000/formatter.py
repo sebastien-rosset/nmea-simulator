@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import Union, Optional
 from .messages import NMEA2000Message
 from .converter import NMEA2000Converter
@@ -45,8 +46,16 @@ class NMEA2000Formatter:
             return self.convert_to_actisense_raw_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
             )
+        elif self.output_format == N2K_YD_RAW:
+            # See OpenCPN/model/src/comm_drv_n2k_net.cpp. CommDriverN2KNet::OnSocketEvent() for details
+            # YD_RAW is a RX Byte compatible with Actisense ASCII RAW.
+            return self.convert_to_actisense_raw_ascii(
+                nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
+            )
         elif self.output_format == N2K_ACTISENSE_N2K_ASCII:
-            raise NotImplementedError("ACTISENSE_N2K_ASCII format not yet supported")
+            return self.convert_to_actisense_n2k_ascii(
+                nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
+            )
         elif self.output_format == N2K_ACTISENSE_N2K:
             raise NotImplementedError("ACTISENSE_N2K format not yet supported")
         elif self.output_format == N2K_ACTISENSE_NGT:
@@ -55,38 +64,96 @@ class NMEA2000Formatter:
             raise NotImplementedError("SEASMART format not yet supported")
         elif self.output_format == N2K_MINIPLEX:
             raise NotImplementedError("MINIPLEX format not yet supported")
-        elif self.output_format == N2K_YD_RAW:
-            raise NotImplementedError("YD_RAW format not yet supported")
         else:
             raise ValueError(f"Unsupported output format: {self.output_format}")
 
-    def convert_to_actisense_raw_ascii(self, pgn, source, data) -> bytes:
+    def convert_to_actisense_raw_ascii(
+        self, pgn, source, data, priority=6, destination=255, is_transmit=False
+    ) -> bytes:
         """
-        Convert CAN frame to Actisense RAW ASCII format
+        Convert CAN frame to Actisense RAW ASCII format compatible with OpenCPN
 
         Args:
         - pgn: Parameter Group Number
         - source: Source address of the device
         - data: List of bytes representing the message payload
+        - priority: Message priority (default 6)
+        - destination: Destination address (default 255 for broadcast)
+        - is_transmit: Whether this is a transmit message (default False)
 
         Returns:
-        Formatted Actisense RAW ASCII message with checksum
+        Formatted Actisense RAW ASCII message
         """
-        # Convert data to hex string
-        data_hex = "".join([f"{byte:02X}" for byte in data])
+        # Convert data to list of bytes if it's not already
+        if isinstance(data, bytes):
+            data = list(data)
 
-        # Construct the base message
-        # Format: $PACTS,PGN:priority,source,len,data*checksum
-        # Using default priority of 3 (can be adjusted if needed)
-        message = f"$PACTS,{pgn}:3,{source},{len(data)},{data_hex}"
+        # Pad or truncate data to 8 bytes
+        data_bytes = (data + [0] * 8)[:8]
 
-        # Calculate checksum (XOR of all characters after '$')
-        checksum = 0
-        for char in message[1:]:
-            checksum ^= ord(char)
+        # Calculate CAN ID according to NMEA 2000 / ISO 11783-3 specification
+        can_id = (
+            (priority & 0x7) << 26
+            | ((pgn >> 8) & 0x1FF) << 16  # PDU Format (full 9 bits)
+            | (pgn & 0xFF) << 8  # PDU Specific
+            | (source & 0xFF)  # Source address
+        )
 
-        # Add checksum to the message
-        return f"{message}*{checksum:02X}".encode()
+        # Format timestamp
+        timestamp = time.strftime("%H:%M:%S.") + f"{int(time.time() * 1000 % 1000):03d}"
+
+        # Transmission flag
+        tx_flag = "T" if is_transmit else "R"
+
+        # Format the message according to OpenCPN's expected format:
+        # HH:MM:SS.mmm R 18F11200 08 FF 00 00 00 00 00 00
+        message = (
+            f"{timestamp} {tx_flag} {can_id:08X} "
+            f"{len(data_bytes):02X} "  # Add data length
+            + " ".join(f"{byte:02X}" for byte in data_bytes)
+            + "\r\n"
+        )
+
+        logging.debug(f"Formatted N2K message: {message.strip()}")
+        return message.encode("ascii")
+
+    def convert_to_actisense_n2k_ascii(
+        self, pgn, source, data, priority=6, destination=255
+    ) -> bytes:
+        """
+        Convert CAN frame to Actisense N2K ASCII format bytes for OpenCPN
+
+        Format: A<timestamp> <source><dest><priority> <pgn> <data>
+        Example: A155950.886 01FF6 F1120 08FF00000000000000
+
+        Args:
+        - pgn: Parameter Group Number
+        - source: Source address of the device
+        - data: Bytes or list of bytes representing the message payload
+        - priority: Message priority (default 6)
+        - destination: Destination address (default 255 for broadcast)
+
+        Returns:
+        Bytes of the formatted Actisense N2K ASCII message
+        """
+        # Convert data to list of bytes if it's not already
+        if isinstance(data, bytes):
+            data = list(data)
+
+        # Format timestamp
+        timestamp = time.strftime("%H%M%S.") + f"{int(time.time() * 1000 % 1000):03d}"
+
+        # Format source/dest/priority field
+        field1 = f"{source:02X}{destination:02X}{priority:01X}"
+
+        # Format data as hex string
+        data_hex = "".join(f"{b:02X}" for b in data)
+
+        # Build complete message
+        message = f"A{timestamp} {field1} {pgn:05X} {data_hex}\r\n"
+
+        logging.debug(f"Formatted N2K ASCII message: {message.strip()}")
+        return message.encode("ascii")
 
     def _get_message_type(self, message: str) -> str:
         """Extract message type without talker ID from NMEA 0183 message"""
