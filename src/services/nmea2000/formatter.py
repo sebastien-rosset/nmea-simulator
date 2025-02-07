@@ -35,8 +35,18 @@ class NMEA2000Formatter:
 
     def format_message(
         self, message: Union[str, NMEA2000Message, List[NMEA2000Message]]
-    ) -> bytes:
-        """Format NMEA 2000 message"""
+    ) -> List[bytes]:
+        """Format NMEA 2000 message(s) into a list of formatted byte messages.
+    
+        Args:
+            message: Input message(s) to format. Can be:
+                - NMEA 0183 string to convert and format
+                - Single NMEA 2000 message
+                - List of NMEA 2000 messages
+                
+        Returns:
+            List of formatted messages as bytes. Empty list if no valid messages.
+        """
         if isinstance(message, str):
             nmea2000_msg = self._convert_0183_to_2000(message)
         else:
@@ -44,15 +54,15 @@ class NMEA2000Formatter:
 
         # Return empty if no message
         if not nmea2000_msg:
-            return b""
+            return []
 
         # Handle single message
         if isinstance(nmea2000_msg, NMEA2000Message):
-            return self._format_single_message(nmea2000_msg)
+            return [self._format_single_message(nmea2000_msg)]
 
         # Handle list of messages
         if isinstance(nmea2000_msg, list):
-            return b"".join(self._format_single_message(msg) for msg in nmea2000_msg)
+            return [self._format_single_message(msg) for msg in nmea2000_msg]
 
         raise ValueError(f"Unexpected message type: {type(nmea2000_msg)}")
 

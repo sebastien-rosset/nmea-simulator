@@ -155,52 +155,72 @@ class MessageService:
 
     def send_nmea(self, message: Union[str, NMEA2000Message]):
         """
-        Send NMEA message in appropriate format.
+        Send NMEA message(s) in appropriate format.
 
         Args:
             message: NMEA message to send (string for 0183, NMEA2000Message for 2000)
         """
         try:
-            formatted_message = self.formatter.format_message(message)
+            formatted_messages = self.formatter.format_message(message)
 
-            if self.version == NMEAVersion.NMEA_2000:
-                if self.formatter.output_format == "ACTISENSE_RAW_ASCII":
-                    # For ACTISENSE_RAW_ASCII, just encode and send the ASCII string
-                    data = formatted_message
-                    log_message = formatted_message.decode("ascii").strip()
+            # Skip processing if no messages
+            if not formatted_messages:
+                return
+            
+            for formatted_message in formatted_messages:
+                if self.version == NMEAVersion.NMEA_2000:
+                    self._send_nmea_2000_message(formatted_message, message)
+                elif self.version == NMEAVersion.NMEA_0183:
+                    self._send_nmea_0183_message(formatted_message, message)
                 else:
-                    # Handle binary CAN frame formats
-                    data = formatted_message
-                    verifier = MessageVerifier()
-                    frame_info = verifier.verify_can_frame(data)
-                    log_message = (
-                        f"Sending PGN {frame_info['pgn']} "
-                        f"({PGN.get_description(frame_info['pgn'])}) Raw bytes: {data.hex()}"
-                    )
-                    if isinstance(message, str):
-                        log_message += f" Converted from {message.strip()}"
-            elif self.version == NMEAVersion.NMEA_0183:
-                if isinstance(message, str):
-                    # Regular NMEA 0183 message
-                    data = formatted_message.encode()
-                    log_message = formatted_message.strip()
-                else:
-                    raise ValueError(f"Conversion from NMEA 2000 to 0183 not supported")
-            else:
-                raise ValueError(f"Unsupported NMEA version: {self.version}")
-
-            send = True
-            if isinstance(message, str):
-                send = self._should_send_sentence(message)
-            if send:
-                if isinstance(data, str):
-                    data = data.encode()
-                self.sock.sendto(data, (self.host, self.port))
-                logging.debug(f"Send NMEA {self.version.value}: '{log_message}'")
+                    raise ValueError(f"Unsupported NMEA version: {self.version}")
 
         except Exception as e:
             logging.error(f"Error sending NMEA message: {e}")
             raise
+
+    def _send_nmea_2000_message(self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]):
+        """Handle sending of a single NMEA 2000 message."""
+        if self.formatter.output_format == "ACTISENSE_RAW_ASCII":
+            # For ACTISENSE_RAW_ASCII, just encode and send the ASCII string
+            data = formatted_message
+            log_message = formatted_message.decode("ascii").strip()
+        else:
+            # Handle binary CAN frame formats
+            data = formatted_message
+            verifier = MessageVerifier()
+            frame_info = verifier.verify_can_frame(data)
+            log_message = (
+                f"Sending PGN {frame_info['pgn']} "
+                f"({PGN.get_description(frame_info['pgn'])}) Raw bytes: {data.hex()}"
+            )
+            if isinstance(original_message, str):
+                log_message += f" Converted from {original_message.strip()}"
+
+        if isinstance(original_message, str):
+            if not self._should_send_sentence(original_message):
+                return
+
+        self._send_data(data, log_message)
+
+    def _send_nmea_0183_message(self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]):
+        """Handle sending of a single NMEA 0183 message."""
+        if not isinstance(original_message, str):
+            raise ValueError("Conversion from NMEA 2000 to 0183 not supported")
+
+        data = formatted_message
+        log_message = formatted_message.decode().strip()
+
+        if self._should_send_sentence(original_message):
+            self._send_data(data, log_message)
+
+    def _send_data(self, data: Union[bytes, str], log_message: str):
+        """Send data over the socket with logging."""
+        if isinstance(data, str):
+            data = data.encode()
+        
+        self.sock.sendto(data, (self.host, self.port))
+        logging.debug(f"Send NMEA {self.version.value}: '{log_message}'")
 
     def send_wind_messages(
         self,
