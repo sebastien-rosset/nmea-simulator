@@ -171,16 +171,6 @@ class MessageService:
                 else:
                     # Handle binary CAN frame formats
                     data = formatted_message
-                    if isinstance(message, NMEA2000Message):
-                        # Log detailed NMEA 2000 message information
-                        logging.debug(f"Sending NMEA 2000 Message:")
-                        logging.debug(f"  PGN: {message.pgn}")
-                        logging.debug(f"  Priority: {message.priority}")
-                        logging.debug(f"  Source: {message.source}")
-                        logging.debug(f"  Destination: {message.destination}")
-                        logging.debug(f"  Data Length: {len(message.data)}")
-                        logging.debug(f"  Data Hex: {message.data.hex()}")
-
                     verifier = MessageVerifier()
                     frame_info = verifier.verify_can_frame(data)
                     log_message = (
@@ -206,10 +196,7 @@ class MessageService:
                 if isinstance(data, str):
                     data = data.encode()
                 self.sock.sendto(data, (self.host, self.port))
-
-            logging.debug(
-                f"{"Send" if send else "Skip"} NMEA: {self.version.value}: {log_message}"
-            )
+                logging.debug(f"Send NMEA {self.version.value}: '{log_message}'")
 
         except Exception as e:
             logging.error(f"Error sending NMEA message: {e}")

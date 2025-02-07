@@ -130,7 +130,6 @@ class NMEA2000Formatter:
         )
 
         # Detailed debug logging
-        logging.debug(f"Actisense RAW ASCII message: {message}")
         return message.encode("ascii")
 
     def convert_to_actisense_n2k_ascii(

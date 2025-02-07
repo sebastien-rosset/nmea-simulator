@@ -117,11 +117,6 @@ def verify_pgn_conversion(nmea_0183_message, converted_2000_message):
     Verify that the converted NMEA 2000 message has the correct PGN
     and contains the expected data.
     """
-    logging.debug(
-        f"Verify PGN conversion. Original 0183 Message: {nmea_0183_message}. PGN: {converted_2000_message.pgn}. PGN Description: {PGN.get_description(converted_2000_message.pgn)}"
-    )
-
-    # Add more specific checks based on message type
     try:
         # Example for position messages
         if "lat" in nmea_0183_message and "lon" in nmea_0183_message:
