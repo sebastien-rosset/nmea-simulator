@@ -68,18 +68,19 @@ class NMEA2000Formatter:
 
     def _format_single_message(self, nmea2000_msg: NMEA2000Message) -> bytes:
         """Format a single NMEA 2000 message"""
+        msg:bytes = None
         if self.output_format == N2K_ACTISENSE_RAW_ASCII:
-            return self.convert_to_actisense_raw_ascii(
+            msg = self.convert_to_actisense_raw_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
             )
         elif self.output_format == N2K_YD_RAW:
             # See OpenCPN/model/src/comm_drv_n2k_net.cpp. CommDriverN2KNet::OnSocketEvent() for details
             # YD_RAW is a RX Byte compatible with Actisense ASCII RAW.
-            return self.convert_to_actisense_raw_ascii(
+            msg = self.convert_to_actisense_raw_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
             )
         elif self.output_format == N2K_ACTISENSE_N2K_ASCII:
-            return self.convert_to_actisense_n2k_ascii(
+            msg = self.convert_to_actisense_n2k_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
             )
         elif self.output_format == N2K_ACTISENSE_N2K:
@@ -92,6 +93,8 @@ class NMEA2000Formatter:
             raise NotImplementedError("MINIPLEX format not yet supported")
         else:
             raise ValueError(f"Unsupported output format: {self.output_format}")
+        logging.info(f"Message PGN {nmea2000_msg.pgn}: {msg}")
+        return msg
 
     def convert_to_actisense_raw_ascii(
         self, pgn, source, data, priority=6, destination=255, is_transmit=False
