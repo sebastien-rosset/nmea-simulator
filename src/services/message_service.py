@@ -104,11 +104,12 @@ class MessageService:
         self.host = host
         self.port = port
         self.version = version
-        self.formatter = (
-            NMEA0183Formatter()
-            if version == NMEAVersion.NMEA_0183
-            else NMEA2000Formatter(output_format=n2k_format)
-        )
+        if version == NMEAVersion.NMEA_0183:
+            self.formatter = NMEA0183Formatter()
+            logging.info(f"Initialized NMEA message service for {version.value}")
+        else:
+            self.formatter = NMEA2000Formatter(output_format=n2k_format)
+            logging.info(f"Initialized NMEA message service for {version.value}. Format: {n2k_format}")
         # All possible sentence types
         self.all_sentence_types = [
             "RMC",

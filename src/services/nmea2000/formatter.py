@@ -125,12 +125,12 @@ class NMEA2000Formatter:
         # HH:MM:SS.mmm R 18F11200 08 FF 00 00 00 00 00 00
         message = (
             f"{timestamp} {tx_flag} {can_id:08X} "
-            f"{len(data_bytes):02X} "  # Add data length
             + " ".join(f"{byte:02X}" for byte in data_bytes)
             + "\r\n"
         )
 
-        logging.debug(f"Formatted N2K message in hex: {message.encode('ascii').hex()}")
+        # Detailed debug logging
+        logging.debug(f"Actisense RAW ASCII message: {message}")
         return message.encode("ascii")
 
     def convert_to_actisense_n2k_ascii(
