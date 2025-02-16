@@ -2,7 +2,7 @@ from dataclasses import dataclass
 import math
 from typing import Dict, Tuple
 
-from src.utils.coordinate_utils import calculate_bearing, calculate_distance
+from nmea_simulator.utils.coordinate_utils import calculate_bearing, calculate_distance
 from .vessel_dynamics import (
     calculate_vessel_dynamics,
     update_rudder_angle,

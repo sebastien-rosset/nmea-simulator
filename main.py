@@ -6,8 +6,8 @@ import yaml
 from datetime import timedelta
 from typing import Dict, Any, Optional
 
-from src.simulator import BasicNavSimulator
-from src.models.ais_vessel import AISVessel
+from nmea_simulator.simulator import BasicNavSimulator
+from nmea_simulator.models.ais_vessel import AISVessel
 
 
 def parse_log_level(level_str: str) -> int:

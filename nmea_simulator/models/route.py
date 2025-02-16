@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from src.utils.coordinate_utils import calculate_bearing, calculate_distance
+from nmea_simulator.utils.coordinate_utils import calculate_bearing, calculate_distance
 
 
 @dataclass

@@ -3,9 +3,9 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple, Union
 
-from src.utils.navigation_utils import calculate_water_speed, update_vessel_position
-from src.utils.vessel_dynamics import RudderState
-from src.utils.weather_utils import calculate_apparent_wind
+from nmea_simulator.utils.navigation_utils import calculate_water_speed, update_vessel_position
+from nmea_simulator.utils.vessel_dynamics import RudderState
+from nmea_simulator.utils.weather_utils import calculate_apparent_wind
 
 from .models.ais_manager import AISManager, AISVessel
 from .models.environment import EnvironmentManager

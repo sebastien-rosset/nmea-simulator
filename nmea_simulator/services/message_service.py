@@ -7,14 +7,14 @@ import logging
 import re
 from typing import Dict, Optional, Union, List
 
-from src.models.route import Position, RouteManager
+from nmea_simulator.models.route import Position, RouteManager
 from .nmea2000 import NMEA2000Formatter, NMEA2000Message, MessageVerifier, PGN
-from src.utils.coordinate_utils import (
+from nmea_simulator.utils.coordinate_utils import (
     calculate_bearing,
     calculate_cross_track_error,
     calculate_distance,
 )
-from src.utils.navigation_utils import calculate_vmg
+from nmea_simulator.utils.navigation_utils import calculate_vmg
 
 
 @dataclass

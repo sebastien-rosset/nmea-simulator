@@ -3,9 +3,9 @@ import logging
 import struct
 import math
 from datetime import datetime
-from src.services.nmea2000 import NMEA2000Message, NMEA2000Formatter, PGN
-from src.services.nmea2000.converter import NMEA2000Converter
-from src.services.nmea2000.utils import (
+from nmea_simulator.services.nmea2000 import NMEA2000Message, NMEA2000Formatter, PGN
+from nmea_simulator.services.nmea2000.converter import NMEA2000Converter
+from nmea_simulator.services.nmea2000.utils import (
     encode_angle,
     decode_angle,
     encode_wind_speed,
