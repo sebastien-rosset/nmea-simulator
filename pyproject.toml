@@ -1,9 +1,15 @@
 [tool.poetry]
 name = "nmea-simulator"
 version = "0.1.0"
-description = ""
+description = "NMEA simulator for testing and development purposes"
 authors = ["Sebastien Rosset"]
 readme = "README.md"
+packages = [
+    { include = "nmea_simulator" }
+]
+license = "MIT"  # Add your preferred license
+repository = "https://github.com/sebastien-rosset/nmea-simulator"
+keywords = ["nmea", "simulator", "gps", "navigation"]
 
 [tool.poetry.dependencies]
 python = "^3.12"
@@ -12,7 +18,30 @@ numpy = "^2.1.3"
 tk = "^0.1.0"
 pyyaml = "^6.0.2"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.3.0"
+flake8 = "^6.0.0"
+mypy = "^1.3.0"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+nmea-sim = "nmea_simulator.cli:main"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra -q"

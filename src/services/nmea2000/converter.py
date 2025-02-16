@@ -145,7 +145,7 @@ class NMEA2000Converter:
             cog_sog_data = struct.pack(
                 "<BBHH",
                 0xFF,  # SID (not used)
-                0,  # COG Reference (0 = True)
+                0xFC,  # COG Reference (true=0) with upper bits set to 1 like OpenCPN
                 cog_int,  # COG in 1/10000th radian
                 sog_ms100,  # SOG in 0.01 m/s
             )
