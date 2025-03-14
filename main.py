@@ -112,7 +112,7 @@ def main():
 
     # Create simulator instance
     simulator = BasicNavSimulator(
-        host=config.get("host", "127.0.0.1"),
+        host=config.get("host"),
         port=config.get("port", 10110),
         nmea_version=config.get("protocol", "0183"),
         n2k_format=config.get("n2k_format"),
