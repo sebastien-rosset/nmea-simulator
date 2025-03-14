@@ -2,6 +2,8 @@ import time
 import logging
 from typing import List, Optional
 from socket import socket
+
+from nmea_simulator.services.message_service import MessageService
 from .ais_vessel import AISVessel
 
 
@@ -41,15 +43,14 @@ class AISManager:
         return None
 
     def update_vessels(
-        self, current_time: float, sock: socket, target_address: tuple
+        self, current_time: float, message_service: MessageService
     ) -> bool:
         """
         Update all AIS vessels and send messages.
 
         Args:
             current_time: Current simulation time
-            sock: UDP socket for sending messages
-            target_address: (host, port) tuple for message destination
+            message_service: MessageService instance to send NMEA messages
 
         Returns:
             bool: True if updates were performed
@@ -76,8 +77,7 @@ class AISManager:
 
             # Generate and send all AIS messages
             for message in vessel.generate_messages():
-                logging.debug(f"AIS NMEA: {message.strip()}")
-                sock.sendto(message.encode(), target_address)
+                message_service._send_data(message, f"AIS NMEA: {message.strip()}")
 
         self.last_update = current_time
         return True

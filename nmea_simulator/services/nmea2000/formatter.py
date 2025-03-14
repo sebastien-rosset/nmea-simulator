@@ -93,7 +93,7 @@ class NMEA2000Formatter:
             raise NotImplementedError("MINIPLEX format not yet supported")
         else:
             raise ValueError(f"Unsupported output format: {self.output_format}")
-        logging.info(f"Message PGN {nmea2000_msg.pgn}: {msg}")
+        logging.debug(f"Message PGN {nmea2000_msg.pgn}: {msg}")
         return msg
 
     def convert_to_actisense_raw_ascii(

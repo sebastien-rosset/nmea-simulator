@@ -236,8 +236,7 @@ class BasicNavSimulator:
         # Update AIS
         self.ais_manager.update_vessels(
             current_time,
-            self.message_service.sock,
-            (self.message_service.host, self.message_service.port),
+            self.message_service,
         )
 
         # Log current state
