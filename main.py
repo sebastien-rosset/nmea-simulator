@@ -114,9 +114,10 @@ def main():
     simulator = BasicNavSimulator(
         host=config.get("host", "127.0.0.1"),
         port=config.get("port", 10110),
-        protocol=config.get("protocol", "0183"),
+        nmea_version=config.get("protocol", "0183"),
         n2k_format=config.get("n2k_format"),
         exclude_sentences=config.get("exclude_sentences"),
+        network_protocol=config.get("network_protocol", "UDP"),
     )
 
     # Create AIS vessels from configuration

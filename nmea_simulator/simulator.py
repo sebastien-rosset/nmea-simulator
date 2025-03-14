@@ -3,7 +3,10 @@ import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple, Union
 
-from nmea_simulator.utils.navigation_utils import calculate_water_speed, update_vessel_position
+from nmea_simulator.utils.navigation_utils import (
+    calculate_water_speed,
+    update_vessel_position,
+)
 from nmea_simulator.utils.vessel_dynamics import RudderState
 from nmea_simulator.utils.weather_utils import calculate_apparent_wind
 
@@ -11,7 +14,7 @@ from .models.ais_manager import AISManager, AISVessel
 from .models.environment import EnvironmentManager
 from .models.route import RouteManager, Position
 from .models.speed_profile import SpeedManager
-from .services.message_service import MessageService, NMEAVersion
+from .services.message_service import MessageService, NMEAVersion, TransportProtocol
 from .utils.coordinate_utils import parse_coordinate
 
 
@@ -25,9 +28,10 @@ class BasicNavSimulator:
         self,
         host="127.0.0.1",
         port=10110,
-        protocol: Literal["0183", "2000"] = "0183",
+        nmea_version: Literal["0183", "2000"] = "0183",
         n2k_format: str = None,
         exclude_sentences: Optional[List[str]] = None,
+        network_protocol: Literal["2000", "0183"] = "0183",
     ):
         """
         Initialize simulator with network settings and subsystems.
@@ -35,21 +39,27 @@ class BasicNavSimulator:
         Args:
             host: Host address for UDP messages
             port: Port number for UDP messages
-            protocol: NMEA protocol version ("0183" or "2000")
+            version: NMEA protocol version ("0183" or "2000")
             n2k_format: NMEA 2000 output format
             exclude_sentences: Optional list of NMEA sentence types to exclude
         """
 
         nmea_version = (
-            NMEAVersion.NMEA_0183 if protocol == "0183" else NMEAVersion.NMEA_2000
+            NMEAVersion.NMEA_0183 if nmea_version == "0183" else NMEAVersion.NMEA_2000
+        )
+        network_protocol = (
+            TransportProtocol.UDP
+            if network_protocol == "UDP"
+            else TransportProtocol.TCP
         )
         # Initialize managers and services
         self.message_service = MessageService(
             host,
             port,
-            version=nmea_version,
+            nmea_version=nmea_version,
             n2k_format=n2k_format,
             exclude_sentences=exclude_sentences,
+            network_protocol=network_protocol,
         )
         self.route_manager = RouteManager()
         self.speed_manager = SpeedManager()

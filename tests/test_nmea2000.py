@@ -31,7 +31,7 @@ class TestNMEA2000Messages(unittest.TestCase):
             priority=2,
             source=0,
             destination=255,
-            data=b"\xFF\x00\x00\x00\x00\x00\x00\x00",
+            data=b"\xff\x00\x00\x00\x00\x00\x00\x00",
         )
 
         frame = self.formatter.format_message(message)

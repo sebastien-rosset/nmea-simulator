@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from socket import socket, AF_INET, SOCK_DGRAM
+from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 import logging
 import re
 from typing import Dict, Optional, Union, List
@@ -28,6 +28,13 @@ class NMEAVersion(Enum):
 
     NMEA_0183 = "0183"
     NMEA_2000 = "2000"
+
+
+class TransportProtocol(Enum):
+    """Transport protocol for NMEA messages"""
+
+    UDP = "UDP"
+    TCP = "TCP"
 
 
 class NMEA0183Formatter:
@@ -62,24 +69,25 @@ class MessageService:
         self,
         host: str = "127.0.0.1",
         port: int = 10110,
-        version: NMEAVersion = NMEAVersion.NMEA_0183,
+        nmea_version: NMEAVersion = NMEAVersion.NMEA_0183,
         n2k_format: str = None,
         exclude_sentences: List[str] = None,
+        network_protocol: TransportProtocol = TransportProtocol.UDP,
     ):
         """
         Initialize the NMEA message service.
 
-        This service handles formatting and sending NMEA messages over UDP.
+        This service handles formatting and sending NMEA messages over TCP or UDP.
         It supports both NMEA 0183 and NMEA 2000 protocols.
 
         Args:
-            host: The IP address to send messages to. Defaults to localhost (127.0.0.1).
+            host: The IP address to use. Defaults to localhost (127.0.0.1).
                 For local testing, use localhost. For sending to other devices on the network,
                 use their IP address.
 
-            port: The UDP port number to send messages to. Defaults to 10110.
-                - 10110 is the standard port for NMEA 0183 over UDP
-                - For NMEA 2000, this port will receive the CAN frames encapsulated in UDP
+            port: The port number to use. Defaults to 10110.
+                - 10110 is the standard port for NMEA 0183 over TCP or UDP
+                - For NMEA 2000, this port will receive the CAN frames.
                 - The port must match the receiving application's configuration (e.g., OpenCPN)
 
             version: The NMEA protocol version to use. Defaults to NMEA 0183.
@@ -91,8 +99,11 @@ class MessageService:
 
             excluded_sentences: List of NMEA 0183 sentence types to exclude from sending.
 
+            protocol: Transport protocol to use (UDP or TCP). Defaults to UDP.
+                     For TCP, the service will listen for incoming connections.
+
         Creates:
-            - UDP socket for sending messages
+            - UDP socket for sending messages or TCP server for listening
             - Appropriate message formatter based on protocol version
 
         Note:
@@ -100,16 +111,33 @@ class MessageService:
             Messages will be sent regardless of whether anything is listening on the target
             host:port combination.
         """
-        self.sock = socket(AF_INET, SOCK_DGRAM)
         self.host = host
         self.port = port
-        self.version = version
-        if version == NMEAVersion.NMEA_0183:
+        self.protocol = network_protocol
+        self.version = nmea_version
+        self.client_sockets = []  # For TCP connections
+
+        # Create appropriate socket type
+        if network_protocol == TransportProtocol.UDP:
+            self.sock = socket(AF_INET, SOCK_DGRAM)
+        else:  # TCP
+            self.sock = socket(AF_INET, SOCK_STREAM)
+            self.sock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+            self.sock.bind((host, port))
+            self.sock.listen(5)
+            self.sock.setblocking(False)  # Non-blocking mode
+            logging.info(f"TCP server listening on {host}:{port}")
+
+        if nmea_version == NMEAVersion.NMEA_0183:
             self.formatter = NMEA0183Formatter()
-            logging.info(f"Initialized NMEA message service for {version.value}")
+            logging.info(
+                f"Initialized NMEA message service for {nmea_version.value} over {network_protocol.value}"
+            )
         else:
             self.formatter = NMEA2000Formatter(output_format=n2k_format)
-            logging.info(f"Initialized NMEA message service for {version.value}. Format: {n2k_format}")
+            logging.info(
+                f"Initialized NMEA message service for {nmea_version.value} over {network_protocol.value}. Format: {n2k_format}"
+            )
         # All possible sentence types
         self.all_sentence_types = [
             "RMC",
@@ -166,7 +194,7 @@ class MessageService:
             # Skip processing if no messages
             if not formatted_messages:
                 return
-            
+
             for formatted_message in formatted_messages:
                 if self.version == NMEAVersion.NMEA_2000:
                     self._send_nmea_2000_message(formatted_message, message)
@@ -179,7 +207,9 @@ class MessageService:
             logging.error(f"Error sending NMEA message: {e}")
             raise
 
-    def _send_nmea_2000_message(self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]):
+    def _send_nmea_2000_message(
+        self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]
+    ):
         """Handle sending of a single NMEA 2000 message."""
         if self.formatter.output_format == "ACTISENSE_RAW_ASCII":
             # For ACTISENSE_RAW_ASCII, just encode and send the ASCII string
@@ -203,7 +233,9 @@ class MessageService:
 
         self._send_data(data, log_message)
 
-    def _send_nmea_0183_message(self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]):
+    def _send_nmea_0183_message(
+        self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]
+    ):
         """Handle sending of a single NMEA 0183 message."""
         if not isinstance(original_message, str):
             raise ValueError("Conversion from NMEA 2000 to 0183 not supported")
@@ -218,8 +250,33 @@ class MessageService:
         """Send data over the socket with logging."""
         if isinstance(data, str):
             data = data.encode()
-        
-        self.sock.sendto(data, (self.host, self.port))
+
+        if self.protocol == TransportProtocol.UDP:
+            self.sock.sendto(data, (self.host, self.port))
+        else:  # TCP
+            # Accept any new connections
+            try:
+                client_sock, addr = self.sock.accept()
+                client_sock.setblocking(False)
+                self.client_sockets.append(client_sock)
+                logging.info(f"New TCP client connected from {addr}")
+            except BlockingIOError:
+                pass  # No new connections
+
+            # Send to all connected clients
+            disconnected = []
+            for client in self.client_sockets:
+                try:
+                    client.send(data)
+                except (BrokenPipeError, ConnectionResetError):
+                    disconnected.append(client)
+                    logging.info("TCP client disconnected")
+
+            # Remove disconnected clients
+            for client in disconnected:
+                self.client_sockets.remove(client)
+                client.close()
+
         logging.debug(f"Send NMEA {self.version.value}: '{log_message}'")
 
     def send_wind_messages(
@@ -343,25 +400,24 @@ class MessageService:
         Args:
             route_manager: Route manager containing current route segment
             current_position: Current vessel position
+
+        The XTE sentence fields are:
+            1. Cyclic Lock Status, A=valid
+            2. Signal Status, A=valid
+            3. Cross Track Error Magnitude
+            4. Direction to steer, L/R
+            5. Units, N=Nautical Miles
+            6. Mode Indicator:
+            A = Autonomous mode
+            D = Differential mode
+            E = Estimated (dead reckoning)
+            M = Manual input
+            S = Simulator
+            N = Data not valid
         """
         # Get current segment
         segment = route_manager.get_current_segment()
 
-        """
-The XTE sentence fields are:
-1. Cyclic Lock Status, A=valid
-2. Signal Status, A=valid
-3. Cross Track Error Magnitude
-4. Direction to steer, L/R
-5. Units, N=Nautical Miles
-6. Mode Indicator:
-   A = Autonomous mode
-   D = Differential mode
-   E = Estimated (dead reckoning)
-   M = Manual input
-   S = Simulator
-   N = Data not valid
-"""
         if segment is None:
             # No active segment, send zero XTE
             xte_magnitude = 0.0
@@ -767,7 +823,12 @@ The XTE sentence fields are:
         self.send_nmea(hdg)
 
     def close(self):
-        """Close the UDP socket"""
+        """Close all sockets"""
+        if self.protocol == TransportProtocol.TCP:
+            # Close all client connections
+            for client in self.client_sockets:
+                client.close()
+            self.client_sockets.clear()
         self.sock.close()
 
     def calculate_nmea_checksum(self, sentence: str) -> str:

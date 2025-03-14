@@ -3,6 +3,7 @@ host: "127.0.0.1"
 port: 10110
 protocol: "2000"
 n2k_format: "ACTISENSE_RAW_ASCII"
+network_protocol: "TCP"
 
 # Logging configuration
 loglevel: "INFO"

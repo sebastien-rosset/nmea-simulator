@@ -37,13 +37,13 @@ class NMEA2000Formatter:
         self, message: Union[str, NMEA2000Message, List[NMEA2000Message]]
     ) -> List[bytes]:
         """Format NMEA 2000 message(s) into a list of formatted byte messages.
-    
+
         Args:
             message: Input message(s) to format. Can be:
                 - NMEA 0183 string to convert and format
                 - Single NMEA 2000 message
                 - List of NMEA 2000 messages
-                
+
         Returns:
             List of formatted messages as bytes. Empty list if no valid messages.
         """
@@ -68,7 +68,7 @@ class NMEA2000Formatter:
 
     def _format_single_message(self, nmea2000_msg: NMEA2000Message) -> bytes:
         """Format a single NMEA 2000 message"""
-        msg:bytes = None
+        msg: bytes = None
         if self.output_format == N2K_ACTISENSE_RAW_ASCII:
             msg = self.convert_to_actisense_raw_ascii(
                 nmea2000_msg.pgn, nmea2000_msg.source, nmea2000_msg.data
