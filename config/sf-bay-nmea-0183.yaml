@@ -1,7 +1,8 @@
 # Network configuration
 host: "127.0.0.1"
 port: 10110
-protocol: "0183"
+nmea_version: "0183"
+network_protocol: "TCP"
 
 # Logging configuration
 loglevel: "INFO"

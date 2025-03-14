@@ -247,7 +247,7 @@ class MessageService:
             raise ValueError("Conversion from NMEA 2000 to 0183 not supported")
 
         data = formatted_message
-        log_message = formatted_message.decode().strip()
+        log_message = formatted_message.strip()
 
         if self._should_send_sentence(original_message):
             self._send_data(data, log_message)
