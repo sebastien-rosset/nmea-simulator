@@ -69,7 +69,7 @@ class MessageService:
 
     def __init__(
         self,
-        host: str = "127.0.0.1",
+        host: str = None,
         port: int = 10110,
         nmea_version: NMEAVersion = NMEAVersion.NMEA_0183,
         n2k_format: str = None,
@@ -83,9 +83,11 @@ class MessageService:
         It supports both NMEA 0183 and NMEA 2000 protocols.
 
         Args:
-            host: The IP address to use. Defaults to localhost (127.0.0.1).
-                For local testing, use localhost. For sending to other devices on the network,
-                use their IP address.
+            host: The IP address to use.
+                - For UDP: Defaults to "127.0.0.1" (localhost)
+                - For TCP: Defaults to "0.0.0.0" (all interfaces)
+                For local testing, use localhost.
+                For sending to other devices on the network, use their IP address.
 
             port: The port number to use. Defaults to 10110.
                 - 10110 is the standard port for NMEA 0183 over TCP or UDP
@@ -113,11 +115,16 @@ class MessageService:
             Messages will be sent regardless of whether anything is listening on the target
             host:port combination.
         """
-        self.host = host
+        # Set appropriate default host based on protocol
+        if host is None:
+            self.host = "127.0.0.1" if network_protocol == TransportProtocol.UDP else "0.0.0.0"
+        else:
+            self.host = host
         self.port = port
         self.protocol = network_protocol
         self.version = nmea_version
         self.client_sockets = []  # For TCP connections
+
 
         # Create appropriate socket type
         if network_protocol == TransportProtocol.UDP:
