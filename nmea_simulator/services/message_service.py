@@ -5,6 +5,8 @@ from enum import Enum
 from socket import socket, AF_INET, SOCK_DGRAM, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
 import logging
 import re
+import threading
+import time
 from typing import Dict, Optional, Union, List
 
 from nmea_simulator.models.route import Position, RouteManager
@@ -126,6 +128,10 @@ class MessageService:
             self.sock.bind((host, port))
             self.sock.listen(5)
             self.sock.setblocking(False)  # Non-blocking mode
+            self._stop_accept_thread = False
+            self._accept_thread = threading.Thread(target=self._accept_connections)
+            self._accept_thread.daemon = True
+            self._accept_thread.start()
             logging.info(f"TCP server listening on {host}:{port}")
 
         if nmea_version == NMEAVersion.NMEA_0183:
@@ -246,6 +252,20 @@ class MessageService:
         if self._should_send_sentence(original_message):
             self._send_data(data, log_message)
 
+    def _accept_connections(self):
+        """Handle incoming TCP connections in a separate thread"""
+        while not self._stop_accept_thread:
+            try:
+                client_sock, addr = self.sock.accept()
+                client_sock.setblocking(False)
+                self.client_sockets.append(client_sock)
+                logging.info(f"New TCP client connected from {addr}")
+            except BlockingIOError:
+                time.sleep(0.1)
+            except Exception as e:
+                logging.error(f"Error accepting TCP connection: {e}")
+                time.sleep(1)
+
     def _send_data(self, data: Union[bytes, str], log_message: str):
         """Send data over the socket with logging."""
         if isinstance(data, str):
@@ -254,15 +274,6 @@ class MessageService:
         if self.protocol == TransportProtocol.UDP:
             self.sock.sendto(data, (self.host, self.port))
         else:  # TCP
-            # Accept any new connections
-            try:
-                client_sock, addr = self.sock.accept()
-                client_sock.setblocking(False)
-                self.client_sockets.append(client_sock)
-                logging.info(f"New TCP client connected from {addr}")
-            except BlockingIOError:
-                pass  # No new connections
-
             # Send to all connected clients
             disconnected = []
             for client in self.client_sockets:
@@ -825,7 +836,10 @@ class MessageService:
     def close(self):
         """Close all sockets"""
         if self.protocol == TransportProtocol.TCP:
+            self._stop_accept_thread = True
             # Close all client connections
+            if self._accept_thread.is_alive():
+                self._accept_thread.join(timeout=1.0)
             for client in self.client_sockets:
                 client.close()
             self.client_sockets.clear()
