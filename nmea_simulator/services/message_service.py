@@ -116,10 +116,7 @@ class MessageService:
             host:port combination.
         """
         # Set appropriate default host based on protocol
-        if host is None:
-            self.host = "127.0.0.1" if network_protocol == TransportProtocol.UDP else "0.0.0.0"
-        else:
-            self.host = host
+        self.host = host
         self.port = port
         self.protocol = network_protocol
         self.version = nmea_version

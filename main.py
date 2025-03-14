@@ -77,11 +77,14 @@ def main():
     )
     # Optional command-line overrides
     parser.add_argument(
-        "--protocol", choices=["0183", "2000"], help="Override NMEA protocol version"
+        "--nmea_version", choices=["0183", "2000"], help="Override NMEA protocol version"
     )
     parser.add_argument("--host", help="Override host address for UDP messages")
     parser.add_argument(
         "--port", type=int, help="Override port number for UDP messages"
+    )
+    parser.add_argument(
+        "--network_protocol", choices=["UDP", "TCP"], help="Network protocol (UDP or TCP)"
     )
     parser.add_argument(
         "--loglevel",
@@ -95,14 +98,21 @@ def main():
     config = load_config(args.config)
 
     # Command-line arguments override config file
-    if args.protocol:
-        config["protocol"] = args.protocol
     if args.host:
         config["host"] = args.host
     if args.port:
         config["port"] = args.port
+    if args.nmea_version:
+        config["nmea_version"] = args.nmea_version
+    if args.network_protocol:
+        config["network_protocol"] = args.network_protocol
     if args.loglevel:
         config["loglevel"] = args.loglevel
+
+    host = config.get("host")
+    if host is None:
+        host = "127.0.0.1" if config["network_protocol"] == "UDP" else "0.0.0.0"
+    config["host"] = host
 
     # Set up logging
     logging.basicConfig(
@@ -114,7 +124,7 @@ def main():
     simulator = BasicNavSimulator(
         host=config.get("host"),
         port=config.get("port", 10110),
-        nmea_version=config.get("protocol", "0183"),
+        nmea_version=config.get("nmea_version", "0183"),
         n2k_format=config.get("n2k_format"),
         exclude_sentences=config.get("exclude_sentences"),
         network_protocol=config.get("network_protocol", "UDP"),
