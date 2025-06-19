@@ -42,13 +42,14 @@ class TransportProtocol(Enum):
 class NMEA0183Formatter:
     """Formats messages according to NMEA 0183 standard"""
 
-    def format_message(self, message: str) -> str:
+    def format_message(self, message: str) -> List[str]:
         """Format NMEA 0183 message with checksum"""
         if not message.startswith("$"):
             message = "$" + message
 
         checksum = self.calculate_checksum(message)
-        return f"{message}*{checksum}\r\n"
+        formatted = f"{message}*{checksum}\r\n"
+        return [formatted]
 
     def calculate_checksum(self, sentence: str) -> str:
         """Calculate NMEA 0183 checksum"""
@@ -244,14 +245,18 @@ class MessageService:
         self._send_data(data, log_message)
 
     def _send_nmea_0183_message(
-        self, formatted_message: bytes, original_message: Union[str, NMEA2000Message]
+        self, formatted_message: str, original_message: Union[str, NMEA2000Message]
     ):
         """Handle sending of a single NMEA 0183 message."""
         if not isinstance(original_message, str):
             raise ValueError("Conversion from NMEA 2000 to 0183 not supported")
 
         data = formatted_message
-        log_message = formatted_message.strip()
+        # Handle both bytes and string types for log_message
+        if isinstance(formatted_message, bytes):
+            log_message = formatted_message.decode('utf-8').strip()
+        else:
+            log_message = formatted_message.strip()
 
         if self._should_send_sentence(original_message):
             self._send_data(data, log_message)
