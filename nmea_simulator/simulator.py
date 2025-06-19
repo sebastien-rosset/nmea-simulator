@@ -376,6 +376,7 @@ class BasicNavSimulator:
         # Get current route segment for XTE calculation
         current_segment = self.route_manager.get_current_segment()
         if not current_segment:
+            logging.debug("No current segment available for XTE calculation")
             return desired_course
 
         # Calculate current cross-track error
@@ -396,6 +397,7 @@ class BasicNavSimulator:
         base_fluctuation = fluctuation_factor * self.heading_fluctuation_amplitude
 
         # Apply XTE correction to keep within bounds
+        correction_applied = False
         if xte_magnitude > self.max_xte * 0.8:  # Start correcting at 80% of limit
             # Calculate correction factor (0 to 1)
             correction_factor = min(
@@ -407,10 +409,12 @@ class BasicNavSimulator:
                 # Boat is left of track, correct right (reduce negative fluctuation)
                 if base_fluctuation < 0:
                     base_fluctuation *= 1.0 - correction_factor
+                    correction_applied = True
             else:
                 # Boat is right of track, correct left (reduce positive fluctuation)
                 if base_fluctuation > 0:
                     base_fluctuation *= 1.0 - correction_factor
+                    correction_applied = True
 
         # Additional random component for realism (smaller magnitude)
         import random
@@ -428,6 +432,16 @@ class BasicNavSimulator:
 
         # Apply fluctuation to desired course
         adjusted_course = (desired_course + total_fluctuation) % 360
+
+        # Debug logging (occasionally)
+        if int(current_time) % 10 == 0:  # Log every 10 seconds
+            logging.info(
+                f"Heading fluctuation: XTE={xte_magnitude:.4f}nm ({xte_direction}), "
+                f"desired={desired_course:.1f}°, fluctuation={total_fluctuation:.1f}°, "
+                f"adjusted={adjusted_course:.1f}°, correction_applied={correction_applied}"
+            )
+
+        return adjusted_course
 
         return adjusted_course
 
