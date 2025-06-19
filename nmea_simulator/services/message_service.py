@@ -76,6 +76,7 @@ class MessageService:
         n2k_format: str = None,
         exclude_sentences: List[str] = None,
         network_protocol: TransportProtocol = TransportProtocol.UDP,
+        talker_id: str = "GP",
     ):
         """
         Initialize the NMEA message service.
@@ -107,6 +108,19 @@ class MessageService:
             protocol: Transport protocol to use (UDP or TCP). Defaults to UDP.
                      For TCP, the service will listen for incoming connections.
 
+            talker_id: Two-character talker ID to use in NMEA 0183 messages. Defaults to "GP".
+                      Common talker IDs include:
+                      - GP: Global Positioning System (GPS)
+                      - GL: GLONASS
+                      - GA: Galileo
+                      - GB: BeiDou
+                      - GN: Global Navigation Satellite System (GNSS)
+                      - WI: Weather Instruments
+                      - HE: Heading Equipment
+                      - SD: Sounder/Depth Equipment
+                      - VW: Velocity Sensor, Water referenced
+                      - HC: Heading and Course Equipment
+
         Creates:
             - UDP socket for sending messages or TCP server for listening
             - Appropriate message formatter based on protocol version
@@ -122,6 +136,11 @@ class MessageService:
         self.protocol = network_protocol
         self.version = nmea_version
         self.client_sockets = []  # For TCP connections
+        
+        # Validate and store talker ID
+        if len(talker_id) != 2 or not talker_id.isalpha():
+            raise ValueError(f"Talker ID must be exactly 2 alphabetic characters, got: '{talker_id}'")
+        self.talker_id = talker_id.upper()
 
 
         # Create appropriate socket type
@@ -334,7 +353,7 @@ class MessageService:
             relative_angle += 360
 
         mwv = (
-            f"WIMWV,"
+            f"{self.talker_id}MWV,"
             f"{relative_angle:.1f},"  # Wind angle
             f"T,"  # Reference: T (True)
             f"{wind_speed:.1f},"  # Wind speed
@@ -350,7 +369,7 @@ class MessageService:
             apparent_angle += 360
 
         mwv = (
-            f"WIMWV,"
+            f"{self.talker_id}MWV,"
             f"{apparent_angle:.1f},"  # Wind angle
             f"R,"  # Reference: R (Relative/Apparent)
             f"{apparent_speed:.1f},"  # Wind speed
@@ -397,7 +416,7 @@ class MessageService:
 
         # Build the GGA sentence
         gga = (
-            f"GPGGA,"
+            f"{self.talker_id}GGA,"
             f"{timestamp},"
             f"{self.format_lat(position['lat'])},"
             f"{self.format_lon(position['lon'])},"
@@ -412,7 +431,7 @@ class MessageService:
 
         self.send_nmea(gga)
 
-    def send_xte(self, route_manager: RouteManager, current_position: Position):
+    def send_xte(self, route_manager: RouteManager, current_position: Position, send_mode_indicator: bool = True):
         """
         Create and send an XTE (Cross-Track Error) sentence.
         Format: $--XTE,A,A,x.x,L/R,N,A*hh
@@ -422,18 +441,18 @@ class MessageService:
             current_position: Current vessel position
 
         The XTE sentence fields are:
-            1. Cyclic Lock Status, A=valid
-            2. Signal Status, A=valid
+            1. Cyclic Lock Status, A=valid, V = Loran-C Blink or SNR warning
+            2. Signal Status, A=valid, V = Loran-C Cycle Lock warning flag
             3. Cross Track Error Magnitude
-            4. Direction to steer, L/R
+            4. Direction to steer, L or R
             5. Units, N=Nautical Miles
-            6. Mode Indicator:
-            A = Autonomous mode
-            D = Differential mode
-            E = Estimated (dead reckoning)
-            M = Manual input
-            S = Simulator
-            N = Data not valid
+            6. FAA Mode Indicator (NMEA 2.3 and later, optional):
+                A = Autonomous mode
+                D = Differential mode
+                E = Estimated (dead reckoning)
+                M = Manual input
+                S = Simulator
+                N = Data not valid
         """
         # Get current segment
         segment = route_manager.get_current_segment()
@@ -455,13 +474,15 @@ class MessageService:
 
         # Build the XTE sentence (using NMEA 2.3 format with mode indicator)
         xte = (
-            f"GPXTE,"
+            f"{self.talker_id}XTE,"
             f"A,A,"  # Both cyclic and signal status valid
             f"{xte_magnitude:.1f},"  # XTE magnitude
             f"{steer_direction},"  # Direction to steer (L/R)
-            f"N,"  # Units (Nautical Miles)
-            f"A"  # Mode indicator (A=Autonomous)
+            f"N"  # Units (Nautical Miles)
         )
+        if send_mode_indicator:
+            # Add mode indicator if requested
+            xte += ",A"
 
         self.send_nmea(xte)
 
@@ -491,7 +512,7 @@ class MessageService:
         5. Depth in fathoms
         6. F (fathoms)
 
-        Example: $SDDBT,11.0,f,3.4,M,1.8,F*hh
+        Example: $GPDBT,11.0,f,3.4,M,1.8,F*hh
         """
         # Convert depth to other units
         depth_feet = depth_meters * METERS_TO_FEET
@@ -499,7 +520,7 @@ class MessageService:
 
         # Build the DBT sentence with all three measurements
         dbt = (
-            f"SDDBT,"
+            f"{self.talker_id}DBT,"
             f"{depth_feet:.1f},f,"  # Depth in feet
             f"{depth_meters:.1f},M,"  # Depth in meters
             f"{depth_fathoms:.1f},F"  # Depth in fathoms
@@ -538,14 +559,14 @@ class MessageService:
         if port_rudder is not None:
             # Dual rudder format
             rsa = (
-                f"HCRSA,"
+                f"{self.talker_id}RSA,"
                 f"{starboard_rudder:.1f},A,"  # Starboard rudder + status
                 f"{port_rudder:.1f},A"  # Port rudder + status
             )
         else:
             # Single rudder format
             rsa = (
-                f"HCRSA,"
+                f"{self.talker_id}RSA,"
                 f"{starboard_rudder:.1f},A,"  # Single rudder + status
                 f","  # Empty port rudder fields
             )
@@ -556,7 +577,7 @@ class MessageService:
         """
         Send NMEA message which is unsupported by OpenCPN.
         """
-        self.send_nmea("GPZZZ,A,B,C,D")
+        self.send_nmea(f"{self.talker_id}ZZZ,A,B,C,D")
 
     def send_vhw(self, heading: float, water_speed: float, variation: float):
         """
@@ -594,7 +615,7 @@ class MessageService:
 
         # Build the VHW sentence
         vhw = (
-            f"VWVHW,"
+            f"{self.talker_id}VHW,"
             f"{heading:.1f},T,"  # True heading
             f"{magnetic_heading:.1f},M,"  # Magnetic heading
             f"{water_speed:.1f},N,"  # Speed in knots
@@ -640,7 +661,7 @@ class MessageService:
         if segment is None:
             # No active waypoint - send empty RMB
             rmb = (
-                f"GPRMB,A,,"  # Status, no XTE
+                f"{self.talker_id}RMB,A,,"  # Status, no XTE
                 f",,"  # No waypoint IDs
                 f",,"  # No destination lat
                 f",,"  # No destination lon
@@ -697,7 +718,7 @@ class MessageService:
 
             # Build the RMB sentence
             rmb = (
-                f"GPRMB,"
+                f"{self.talker_id}RMB,"
                 f"A,"  # Data status (A=valid)
                 f"{xte_magnitude:.1f},"  # Cross Track Error
                 f"{steer_direction},"  # Direction to steer (L/R)
@@ -738,7 +759,7 @@ class MessageService:
             relative_angle += 360
 
         mwv = (
-            f"WIMWV,"
+            f"{self.talker_id}MWV,"
             f"{relative_angle:.1f},"  # Wind angle
             f"{reference},"  # Reference: R (Relative/Apparent) or T (True)
             f"{wind_speed:.1f},"  # Wind speed
@@ -785,7 +806,7 @@ class MessageService:
         wind_speed_ms = true_wind_speed * 0.514444  # Convert knots to m/s
 
         mwd = (
-            f"WIMWD,"
+            f"{self.talker_id}MWD,"
             f"{true_wind_direction:.1f},T,"  # True wind direction
             f"{magnetic_wind_dir:.1f},M,"  # Magnetic wind direction
             f"{true_wind_speed:.1f},N,"  # Wind speed in knots
@@ -816,9 +837,8 @@ class MessageService:
         date = now.strftime("%d%m%y")
 
         # RMC - Recommended Minimum Navigation Information
-        # Talker ID is GP for GPS
         rmc = (
-            f"GPRMC,{timestamp},A,"
+            f"{self.talker_id}RMC,{timestamp},A,"
             f"{self.format_lat(position['lat'])},"
             f"{self.format_lon(position['lon'])},"
             f"{sog:.1f},{cog:.1f},{date},"
@@ -827,19 +847,16 @@ class MessageService:
         self.send_nmea(rmc)
 
         # HDT - Heading True from gyrocompass
-        # Talker ID is HE
-        hdt = f"HEHDT,{heading:.1f},T"
+        hdt = f"{self.talker_id}HDT,{heading:.1f},T"
         self.send_nmea(hdt)
 
         # HDM - Heading Magnetic from magnetic compass
-        # Talker ID is HE
         magnetic_heading = (heading + variation) % 360
-        hdm = f"HEHDM,{magnetic_heading:.1f},M"
+        hdm = f"{self.talker_id}HDM,{magnetic_heading:.1f},M"
         self.send_nmea(hdm)
 
         # HDG - Heading with variation/deviation
-        # Talker ID is HE
-        hdg = f"HEHDG,{heading:.1f},0.0,E,{abs(variation):.1f},W"
+        hdg = f"{self.talker_id}HDG,{heading:.1f},0.0,E,{abs(variation):.1f},W"
         self.send_nmea(hdg)
 
     def close(self):
