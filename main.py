@@ -152,6 +152,10 @@ def main():
         wind_direction=config.get("wind_direction", 0),
         wind_speed=config.get("wind_speed", 0),
         ais_vessels=ais_vessels,
+        enable_heading_fluctuations=config.get("enable_heading_fluctuations", False),
+        max_xte=config.get("max_xte", 0.05),
+        heading_fluctuation_amplitude=config.get("heading_fluctuation_amplitude", 5.0),
+        heading_fluctuation_period=config.get("heading_fluctuation_period", 30.0),
     )
 
 

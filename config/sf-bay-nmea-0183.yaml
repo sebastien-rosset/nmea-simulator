@@ -42,6 +42,11 @@ wind_speed: 15.0    # 15 knots of wind
 update_rate: 1      # Update every second
 duration_seconds: null  # Run indefinitely
 
+enable_heading_fluctuations: true
+max_xte: 1.0                    # cross-track error in kilometers
+heading_fluctuation_amplitude: 10.0  # ±4 degrees maximum deviation
+heading_fluctuation_period: 25.0    # 25 second sinusoidal period
+
 # AIS vessel configurations
 ais_vessels:
   - mmsi: 366123456

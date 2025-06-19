@@ -436,7 +436,7 @@ class MessageService:
         self,
         route_manager: RouteManager,
         current_position: Position,
-        send_mode_indicator: bool = True,
+        send_mode_indicator: bool = False,
     ):
         """
         Create and send an XTE (Cross-Track Error) sentence.

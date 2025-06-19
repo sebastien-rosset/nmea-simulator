@@ -1,4 +1,5 @@
 import logging
+import math
 import time
 from datetime import datetime, timedelta
 from typing import Dict, List, Literal, Optional, Tuple, Union
@@ -9,6 +10,7 @@ from nmea_simulator.utils.navigation_utils import (
 )
 from nmea_simulator.utils.vessel_dynamics import RudderState
 from nmea_simulator.utils.weather_utils import calculate_apparent_wind
+from nmea_simulator.utils.coordinate_utils import calculate_cross_track_error
 
 from .models.ais_manager import AISManager, AISVessel
 from .models.environment import EnvironmentManager
@@ -80,6 +82,20 @@ class BasicNavSimulator:
         self.max_rudder_angle = 35.0  # Maximum rudder deflection
         self.has_dual_rudder = False
 
+        # Heading fluctuation configuration
+        self.enable_heading_fluctuations = (
+            False  # Enable realistic heading fluctuations
+        )
+        self.max_xte = (
+            0.05  # Maximum cross-track error in nautical miles (default: 50 meters)
+        )
+        self.heading_fluctuation_amplitude = 5.0  # Maximum heading deviation in degrees
+        self.heading_fluctuation_period = (
+            30.0  # Period for sinusoidal fluctuations in seconds
+        )
+        self._heading_offset = 0.0  # Current heading offset from desired course
+        self._last_heading_update = 0.0  # Timestamp of last heading fluctuation update
+
         # Instrument state
         self.gps_quality = 1  # GPS fix
         self.satellites_in_use = 8
@@ -99,6 +115,10 @@ class BasicNavSimulator:
         wind_direction: float = 0.0,
         wind_speed: float = 0.0,
         ais_vessels: Optional[List[AISVessel]] = None,
+        enable_heading_fluctuations: bool = False,
+        max_xte: float = 0.05,
+        heading_fluctuation_amplitude: float = 5.0,
+        heading_fluctuation_period: float = 30.0,
     ):
         """
         Run the navigation simulation.
@@ -111,9 +131,21 @@ class BasicNavSimulator:
             wind_direction: True wind direction (FROM) in degrees
             wind_speed: True wind speed in knots
             ais_vessels: Optional list of AIS vessels to simulate
+            enable_heading_fluctuations: Enable realistic heading fluctuations
+            max_xte: Maximum cross-track error in nautical miles (default: 0.05 = ~90m)
+            heading_fluctuation_amplitude: Maximum heading deviation in degrees (default: 5.0)
+            heading_fluctuation_period: Period for sinusoidal fluctuations in seconds (default: 30.0)
         """
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
+
+        # Configure heading fluctuations
+        self.configure_heading_fluctuations(
+            enable_heading_fluctuations,
+            max_xte,
+            heading_fluctuation_amplitude,
+            heading_fluctuation_period,
+        )
 
         # Initialize subsystems
         self._initialize_simulation(
@@ -201,7 +233,13 @@ class BasicNavSimulator:
             logging.info("Navigation complete or error")
             return False
 
-        # Update vessel position and dynamics with the desired course
+        # Apply heading fluctuations if enabled
+        if self.enable_heading_fluctuations and desired_course is not None:
+            desired_course = self._calculate_heading_fluctuation(
+                current_time, desired_course
+            )
+
+        # Update vessel position and dynamics with the (potentially fluctuating) desired course
         environment = self.environment_manager.environment
         new_position, new_cog, new_heading, new_rudder = update_vessel_position(
             self.position,
@@ -212,7 +250,7 @@ class BasicNavSimulator:
                 has_dual_rudder=self.has_dual_rudder,
             ),
             self.heading,
-            desired_course,  # Use the desired course from route manager
+            desired_course,  # Use the (potentially fluctuating) desired course
             self.sog,
             environment.current.speed,
             environment.current.direction,
@@ -295,6 +333,103 @@ class BasicNavSimulator:
             f"Distance to WP: {self.route_manager.get_distance_to_next_waypoint(Position(**self.position)):.3f}nm. "
             f"SOG: {self.sog:.2f}kts"
         )
+
+    def configure_heading_fluctuations(
+        self,
+        enable: bool = True,
+        max_xte: float = 0.05,
+        amplitude: float = 5.0,
+        period: float = 30.0,
+    ):
+        """
+        Configure realistic heading fluctuations.
+
+        Args:
+            enable: Enable heading fluctuations
+            max_xte: Maximum cross-track error in nautical miles (default: 0.05 = ~90 meters)
+            amplitude: Maximum heading deviation in degrees (default: 5.0)
+            period: Period for sinusoidal fluctuations in seconds (default: 30.0)
+        """
+        self.enable_heading_fluctuations = enable
+        self.max_xte = max_xte
+        self.heading_fluctuation_amplitude = amplitude
+        self.heading_fluctuation_period = period
+        self._heading_offset = 0.0
+        self._last_heading_update = 0.0
+
+    def _calculate_heading_fluctuation(
+        self, current_time: float, desired_course: float
+    ) -> float:
+        """
+        Calculate realistic heading fluctuation while staying within XTE limits.
+
+        Args:
+            current_time: Current simulation time
+            desired_course: Desired course to the next waypoint
+
+        Returns:
+            float: Adjusted desired course with fluctuations
+        """
+        if not self.enable_heading_fluctuations:
+            return desired_course
+
+        # Get current route segment for XTE calculation
+        current_segment = self.route_manager.get_current_segment()
+        if not current_segment:
+            return desired_course
+
+        # Calculate current cross-track error
+        current_pos = Position(lat=self.position["lat"], lon=self.position["lon"])
+        xte_magnitude, xte_direction = calculate_cross_track_error(
+            current_pos.lat,
+            current_pos.lon,
+            current_segment.start.lat,
+            current_segment.start.lon,
+            current_segment.end.lat,
+            current_segment.end.lon,
+        )
+
+        # Generate sinusoidal heading fluctuation
+        fluctuation_factor = math.sin(
+            2 * math.pi * current_time / self.heading_fluctuation_period
+        )
+        base_fluctuation = fluctuation_factor * self.heading_fluctuation_amplitude
+
+        # Apply XTE correction to keep within bounds
+        if xte_magnitude > self.max_xte * 0.8:  # Start correcting at 80% of limit
+            # Calculate correction factor (0 to 1)
+            correction_factor = min(
+                1.0, (xte_magnitude - self.max_xte * 0.8) / (self.max_xte * 0.2)
+            )
+
+            # Determine correction direction (opposite to XTE direction)
+            if xte_direction == "L":
+                # Boat is left of track, correct right (reduce negative fluctuation)
+                if base_fluctuation < 0:
+                    base_fluctuation *= 1.0 - correction_factor
+            else:
+                # Boat is right of track, correct left (reduce positive fluctuation)
+                if base_fluctuation > 0:
+                    base_fluctuation *= 1.0 - correction_factor
+
+        # Additional random component for realism (smaller magnitude)
+        import random
+
+        random_component = random.uniform(-1.0, 1.0) * 0.5  # ±0.5 degrees
+
+        # Combine fluctuations
+        total_fluctuation = base_fluctuation + random_component
+
+        # Limit total fluctuation to prevent excessive deviations
+        max_deviation = min(
+            self.heading_fluctuation_amplitude, 10.0
+        )  # Cap at 10 degrees
+        total_fluctuation = max(-max_deviation, min(max_deviation, total_fluctuation))
+
+        # Apply fluctuation to desired course
+        adjusted_course = (desired_course + total_fluctuation) % 360
+
+        return adjusted_course
 
     def __del__(self):
         """Cleanup network resources"""
