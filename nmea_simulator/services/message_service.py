@@ -136,12 +136,13 @@ class MessageService:
         self.protocol = network_protocol
         self.version = nmea_version
         self.client_sockets = []  # For TCP connections
-        
+
         # Validate and store talker ID
         if len(talker_id) != 2 or not talker_id.isalpha():
-            raise ValueError(f"Talker ID must be exactly 2 alphabetic characters, got: '{talker_id}'")
+            raise ValueError(
+                f"Talker ID must be exactly 2 alphabetic characters, got: '{talker_id}'"
+            )
         self.talker_id = talker_id.upper()
-
 
         # Create appropriate socket type
         if network_protocol == TransportProtocol.UDP:
@@ -273,7 +274,7 @@ class MessageService:
         data = formatted_message
         # Handle both bytes and string types for log_message
         if isinstance(formatted_message, bytes):
-            log_message = formatted_message.decode('utf-8').strip()
+            log_message = formatted_message.decode("utf-8").strip()
         else:
             log_message = formatted_message.strip()
 
@@ -431,7 +432,12 @@ class MessageService:
 
         self.send_nmea(gga)
 
-    def send_xte(self, route_manager: RouteManager, current_position: Position, send_mode_indicator: bool = True):
+    def send_xte(
+        self,
+        route_manager: RouteManager,
+        current_position: Position,
+        send_mode_indicator: bool = True,
+    ):
         """
         Create and send an XTE (Cross-Track Error) sentence.
         Format: $--XTE,A,A,x.x,L/R,N,A*hh

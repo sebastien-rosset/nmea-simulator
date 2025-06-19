@@ -77,14 +77,18 @@ def main():
     )
     # Optional command-line overrides
     parser.add_argument(
-        "--nmea_version", choices=["0183", "2000"], help="Override NMEA protocol version"
+        "--nmea_version",
+        choices=["0183", "2000"],
+        help="Override NMEA protocol version",
     )
     parser.add_argument("--host", help="Override host address for UDP messages")
     parser.add_argument(
         "--port", type=int, help="Override port number for UDP messages"
     )
     parser.add_argument(
-        "--network_protocol", choices=["UDP", "TCP"], help="Network protocol (UDP or TCP)"
+        "--network_protocol",
+        choices=["UDP", "TCP"],
+        help="Network protocol (UDP or TCP)",
     )
     parser.add_argument(
         "--loglevel",

@@ -26,8 +26,8 @@ class BasicNavSimulator:
 
     def __init__(
         self,
-        host:str=None,
-        port:int=10110,
+        host: str = None,
+        port: int = 10110,
         nmea_version: Literal["0183", "2000"] = "0183",
         n2k_format: str = None,
         exclude_sentences: Optional[List[str]] = None,
