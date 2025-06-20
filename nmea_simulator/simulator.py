@@ -89,10 +89,19 @@ class BasicNavSimulator:
         self.max_xte = (
             0.05  # Maximum cross-track error in nautical miles (default: 50 meters)
         )
-        self.heading_fluctuation_amplitude = 5.0  # Maximum heading deviation in degrees
-        self.heading_fluctuation_period = (
-            30.0  # Period for sinusoidal fluctuations in seconds
-        )
+
+        # Multi-frequency fluctuation parameters
+        self.fluctuation_config = {
+            "low_frequency": {"amplitude": 5.0, "period": 60.0},
+            "high_frequency": {"amplitude": 2.0, "period": 12.0},
+        }
+
+        # Random phase offsets for more realistic fluctuations
+        import random
+
+        self._low_freq_phase_offset = random.uniform(0, 2 * math.pi)
+        self._high_freq_phase_offset = random.uniform(0, 2 * math.pi)
+
         self._heading_offset = 0.0  # Current heading offset from desired course
         self._last_heading_update = 0.0  # Timestamp of last heading fluctuation update
 
@@ -115,10 +124,7 @@ class BasicNavSimulator:
         wind_direction: float = 0.0,
         wind_speed: float = 0.0,
         ais_vessels: Optional[List[AISVessel]] = None,
-        enable_heading_fluctuations: bool = False,
-        max_xte: float = 0.05,
-        heading_fluctuation_amplitude: float = 5.0,
-        heading_fluctuation_period: float = 30.0,
+        heading_fluctuations: Optional[Dict] = None,
     ):
         """
         Run the navigation simulation.
@@ -131,20 +137,38 @@ class BasicNavSimulator:
             wind_direction: True wind direction (FROM) in degrees
             wind_speed: True wind speed in knots
             ais_vessels: Optional list of AIS vessels to simulate
-            enable_heading_fluctuations: Enable realistic heading fluctuations
-            max_xte: Maximum cross-track error in nautical miles (default: 0.05 = ~90m)
-            heading_fluctuation_amplitude: Maximum heading deviation in degrees (default: 5.0)
-            heading_fluctuation_period: Period for sinusoidal fluctuations in seconds (default: 30.0)
+            heading_fluctuations: Optional dictionary with fluctuation configuration:
+                {
+                    'enabled': bool,
+                    'max_xte': float,  # Maximum cross-track error in nautical miles
+                    'low_frequency': {'amplitude': float, 'period': float},
+                    'high_frequency': {'amplitude': float, 'period': float},
+                    'random': {'amplitude': float},  # Optional random component
+                }
         """
         if not waypoints:
             raise ValueError("Must provide at least one waypoint")
 
         # Configure heading fluctuations
+        if heading_fluctuations:
+            enable_fluctuations = heading_fluctuations.get("enabled", False)
+            max_xte = heading_fluctuations.get("max_xte", 0.05)
+
+            # Extract fluctuation config (everything except 'enabled' and 'max_xte')
+            fluctuation_config = {
+                key: value
+                for key, value in heading_fluctuations.items()
+                if key not in ("enabled", "max_xte")
+            }
+        else:
+            enable_fluctuations = False
+            max_xte = 0.05
+            fluctuation_config = None
+
         self.configure_heading_fluctuations(
-            enable_heading_fluctuations,
+            enable_fluctuations,
             max_xte,
-            heading_fluctuation_amplitude,
-            heading_fluctuation_period,
+            fluctuation_config,
         )
 
         # Initialize subsystems
@@ -338,22 +362,48 @@ class BasicNavSimulator:
         self,
         enable: bool = True,
         max_xte: float = 0.05,
-        amplitude: float = 5.0,
-        period: float = 30.0,
+        fluctuation_config: dict = None,
     ):
         """
-        Configure realistic heading fluctuations.
+        Configure realistic multi-frequency heading fluctuations.
 
         Args:
             enable: Enable heading fluctuations
             max_xte: Maximum cross-track error in nautical miles (default: 0.05 = ~90 meters)
-            amplitude: Maximum heading deviation in degrees (default: 5.0)
-            period: Period for sinusoidal fluctuations in seconds (default: 30.0)
+            fluctuation_config: Dictionary with frequency components:
+                {
+                    'low_frequency': {'amplitude': float, 'period': float},
+                    'high_frequency': {'amplitude': float, 'period': float},
+                    'random': {'amplitude': float},  # Optional random component
+                }
         """
         self.enable_heading_fluctuations = enable
         self.max_xte = max_xte
-        self.heading_fluctuation_amplitude = amplitude
-        self.heading_fluctuation_period = period
+
+        if fluctuation_config:
+            # Use provided multi-frequency configuration
+            self.fluctuation_config.update(fluctuation_config)
+
+        # Ensure all required components are present with defaults
+        if "low_frequency" not in self.fluctuation_config:
+            self.fluctuation_config["low_frequency"] = {
+                "amplitude": 5.0,
+                "period": 60.0,
+            }
+        if "high_frequency" not in self.fluctuation_config:
+            self.fluctuation_config["high_frequency"] = {
+                "amplitude": 2.0,
+                "period": 12.0,
+            }
+        if "random" not in self.fluctuation_config:
+            self.fluctuation_config["random"] = {"amplitude": 1.0}
+
+        # Reset phase offsets for new configuration
+        import random
+
+        self._low_freq_phase_offset = random.uniform(0, 2 * math.pi)
+        self._high_freq_phase_offset = random.uniform(0, 2 * math.pi)
+
         self._heading_offset = 0.0
         self._last_heading_update = 0.0
 
@@ -390,58 +440,89 @@ class BasicNavSimulator:
             current_segment.end.lon,
         )
 
-        # Generate sinusoidal heading fluctuation
-        fluctuation_factor = math.sin(
-            2 * math.pi * current_time / self.heading_fluctuation_period
-        )
-        base_fluctuation = fluctuation_factor * self.heading_fluctuation_amplitude
-
-        # Apply XTE correction to keep within bounds
-        correction_applied = False
-        if xte_magnitude > self.max_xte * 0.8:  # Start correcting at 80% of limit
-            # Calculate correction factor (0 to 1)
-            correction_factor = min(
-                1.0, (xte_magnitude - self.max_xte * 0.8) / (self.max_xte * 0.2)
-            )
-
-            # Determine correction direction (opposite to XTE direction)
-            if xte_direction == "L":
-                # Boat is left of track, correct right (reduce negative fluctuation)
-                if base_fluctuation < 0:
-                    base_fluctuation *= 1.0 - correction_factor
-                    correction_applied = True
-            else:
-                # Boat is right of track, correct left (reduce positive fluctuation)
-                if base_fluctuation > 0:
-                    base_fluctuation *= 1.0 - correction_factor
-                    correction_applied = True
-
-        # Additional random component for realism (smaller magnitude)
+        # Generate multi-frequency fluctuation pattern
         import random
 
-        random_component = random.uniform(-1.0, 1.0) * 0.5  # ±0.5 degrees
+        # Low frequency component (long-term drift) with phase offset
+        low_freq_config = self.fluctuation_config["low_frequency"]
+        low_frequency_fluctuation = (
+            math.sin(
+                2 * math.pi * current_time / low_freq_config["period"]
+                + self._low_freq_phase_offset
+            )
+            * low_freq_config["amplitude"]
+        )
 
-        # Combine fluctuations
-        total_fluctuation = base_fluctuation + random_component
+        # High frequency component (short-term oscillations) with phase offset
+        high_freq_config = self.fluctuation_config["high_frequency"]
+        high_frequency_fluctuation = (
+            math.sin(
+                2 * math.pi * current_time / high_freq_config["period"]
+                + self._high_freq_phase_offset
+            )
+            * high_freq_config["amplitude"]
+        )
 
-        # Limit total fluctuation to prevent excessive deviations
-        max_deviation = min(
-            self.heading_fluctuation_amplitude, 10.0
-        )  # Cap at 10 degrees
-        total_fluctuation = max(-max_deviation, min(max_deviation, total_fluctuation))
+        # Random noise component
+        random_config = self.fluctuation_config.get("random", {"amplitude": 1.0})
+        random_component = random.uniform(-1.0, 1.0) * random_config["amplitude"]
+
+        # Combine all fluctuation components
+        base_fluctuation = (
+            low_frequency_fluctuation + high_frequency_fluctuation + random_component
+        )
+
+        # Apply XTE correction with more gradual response
+        correction_applied = False
+        xte_threshold = self.max_xte * 0.6  # Start correcting at 60% of limit
+
+        if xte_magnitude > xte_threshold:
+            # Calculate correction factor (0 to 1) with smoother curve
+            correction_range = self.max_xte - xte_threshold
+            correction_factor = min(
+                1.0, (xte_magnitude - xte_threshold) / correction_range
+            )
+            correction_factor = (
+                correction_factor**0.5
+            )  # Square root for smoother transition
+
+            # Determine correction direction and apply
+            if xte_direction == "L":
+                # Boat is left of track, need to steer right (reduce leftward fluctuation)
+                if base_fluctuation < 0:
+                    base_fluctuation *= 1.0 - correction_factor * 0.8
+                    correction_applied = True
+                # Also add some rightward bias
+                base_fluctuation += correction_factor * 2.0
+            else:
+                # Boat is right of track, need to steer left (reduce rightward fluctuation)
+                if base_fluctuation > 0:
+                    base_fluctuation *= 1.0 - correction_factor * 0.8
+                    correction_applied = True
+                # Also add some leftward bias
+                base_fluctuation -= correction_factor * 2.0
+
+        # Limit total fluctuation based on the maximum amplitude from all frequency components
+        max_amplitude = max(
+            self.fluctuation_config["low_frequency"]["amplitude"],
+            self.fluctuation_config["high_frequency"]["amplitude"],
+        )
+        max_deviation = (
+            max_amplitude * 1.2
+        )  # Allow slightly more than the max component
+        total_fluctuation = max(-max_deviation, min(max_deviation, base_fluctuation))
 
         # Apply fluctuation to desired course
         adjusted_course = (desired_course + total_fluctuation) % 360
 
-        # Debug logging (occasionally)
-        if int(current_time) % 10 == 0:  # Log every 10 seconds
-            logging.info(
-                f"Heading fluctuation: XTE={xte_magnitude:.4f}nm ({xte_direction}), "
-                f"desired={desired_course:.1f}°, fluctuation={total_fluctuation:.1f}°, "
-                f"adjusted={adjusted_course:.1f}°, correction_applied={correction_applied}"
-            )
-
-        return adjusted_course
+        # Enhanced logging for debugging
+        logging.info(
+            f"Heading fluctuation: XTE={xte_magnitude:.4f}nm ({xte_direction}), "
+            f"desired={desired_course:.1f}°, fluctuation={total_fluctuation:.1f}°, "
+            f"adjusted={adjusted_course:.1f}°, correction_applied={correction_applied}, "
+            f"low_freq={low_frequency_fluctuation:.1f}°, high_freq={high_frequency_fluctuation:.1f}°, "
+            f"random={random_component:.1f}°"
+        )
 
         return adjusted_course
 

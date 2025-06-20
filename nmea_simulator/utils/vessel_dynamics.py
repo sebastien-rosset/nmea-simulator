@@ -1,4 +1,4 @@
-import math
+import logging
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -52,8 +52,8 @@ def update_rudder_angle(
     # Limit rudder angle to maximum deflection
     desired_rudder = max(-max_rudder_angle, min(max_rudder_angle, desired_rudder))
 
-    # Apply rudder movement rate limit (typical 2.5-3 degrees per second)
-    MAX_RATE = 3.0  # degrees per second
+    # Apply rudder movement rate limit.
+    MAX_RATE = 10.0  # degrees per second
     max_change = MAX_RATE * delta_time
 
     if abs(desired_rudder - current_rudder) <= max_change:
@@ -83,7 +83,7 @@ def calculate_vessel_dynamics(
         VesselDynamics: New heading and turn rate
     """
     # Rudder effect on turn rate
-    RUDDER_TURN_RATE = 1.0  # degrees per second at full rudder
+    RUDDER_TURN_RATE = 10.0  # degrees per second at full rudder
     turn_rate = (rudder_angle / max_rudder_angle) * RUDDER_TURN_RATE
 
     # Update heading based on rudder
