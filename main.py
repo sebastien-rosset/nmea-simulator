@@ -95,6 +95,10 @@ def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Override logging level",
     )
+    parser.add_argument(
+        "--duration",
+        help="Override simulation duration (e.g., '30s', '5m')",
+    )
 
     args = parser.parse_args()
 
@@ -112,6 +116,8 @@ def main():
         config["network_protocol"] = args.network_protocol
     if args.loglevel:
         config["loglevel"] = args.loglevel
+    if args.duration:
+        config["duration"] = args.duration
 
     host = config.get("host")
     if host is None:
@@ -146,11 +152,16 @@ def main():
     # Extract heading fluctuations configuration
     heading_fluctuations = config.get("heading_fluctuations", {})
 
+    # Parse duration if provided
+    duration = None
+    if config.get("duration"):
+        duration = parse_timedelta(config["duration"])
+
     logging.info("Starting simulation...")
     simulator.simulate(
         waypoints=config["waypoints"],
         speed_profile=speed_profile,
-        duration_seconds=config.get("duration_seconds"),
+        duration=duration,
         update_rate=config.get("update_rate", 1),
         wind_direction=config.get("wind_direction", 0),
         wind_speed=config.get("wind_speed", 0),

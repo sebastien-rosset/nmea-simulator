@@ -119,7 +119,7 @@ class BasicNavSimulator:
         self,
         waypoints: List[Dict[str, Union[str, float]]],
         speed_profile: List[Tuple[Union[timedelta, None], float]],
-        duration_seconds: Optional[float] = None,
+        duration: Optional[timedelta] = None,
         update_rate: float = 1,
         wind_direction: float = 0.0,
         wind_speed: float = 0.0,
@@ -132,7 +132,7 @@ class BasicNavSimulator:
         Args:
             waypoints: List of waypoint dictionaries with 'lat' and 'lon' keys
             speed_profile: List of (duration, speed) tuples defining vessel speed
-            duration_seconds: Optional simulation duration in seconds
+            duration: Optional simulation duration as timedelta object
             update_rate: How often to update simulation state (seconds)
             wind_direction: True wind direction (FROM) in degrees
             wind_speed: True wind speed in knots
@@ -186,8 +186,8 @@ class BasicNavSimulator:
 
                 # Check duration
                 if (
-                    duration_seconds is not None
-                    and (current_time - start_time) >= duration_seconds
+                    duration is not None
+                    and (current_time - start_time) >= duration.total_seconds()
                 ):
                     logging.info("Simulation duration reached")
                     break

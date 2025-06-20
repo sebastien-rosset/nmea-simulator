@@ -40,7 +40,7 @@ wind_speed: 15.0    # 15 knots of wind
 
 # Simulation parameters
 update_rate: 1      # Update every second
-duration_seconds: null  # Run indefinitely
+duration: null      # Run indefinitely (or use "30s", "5m", etc.)
 
 # Multi-frequency heading fluctuations for realistic boat behavior
 heading_fluctuations:
