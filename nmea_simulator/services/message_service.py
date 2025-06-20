@@ -482,7 +482,7 @@ class MessageService:
         xte = (
             f"{self.talker_id}XTE,"
             f"A,A,"  # Both cyclic and signal status valid
-            f"{xte_magnitude:.1f},"  # XTE magnitude
+            f"{xte_magnitude:.3f},"  # XTE magnitude with 3 decimal places for better precision
             f"{steer_direction},"  # Direction to steer (L/R)
             f"N"  # Units (Nautical Miles)
         )

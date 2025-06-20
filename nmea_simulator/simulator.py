@@ -516,7 +516,7 @@ class BasicNavSimulator:
         adjusted_course = (desired_course + total_fluctuation) % 360
 
         # Enhanced logging for debugging
-        logging.info(
+        logging.debug(
             f"Heading fluctuation: XTE={xte_magnitude:.4f}nm ({xte_direction}), "
             f"desired={desired_course:.1f}°, fluctuation={total_fluctuation:.1f}°, "
             f"adjusted={adjusted_course:.1f}°, correction_applied={correction_applied}, "
