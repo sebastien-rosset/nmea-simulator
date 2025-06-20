@@ -45,7 +45,7 @@ duration_seconds: null  # Run indefinitely
 # Multi-frequency heading fluctuations for realistic boat behavior
 heading_fluctuations:
   enabled: true
-  max_xte: 0.15  # Maximum cross-track error in nautical miles (~280 meters)
+  max_xte: 0.5  # Maximum cross-track error in nautical miles
   low_frequency:
     amplitude: 10.0
     period: 600.0
